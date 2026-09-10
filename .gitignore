@@ -1,0 +1,14 @@
+# Private task inventory and generated exports
+# These files may contain personal tasks and must never be published.
+data/
+exports/
+
+# Java build output
+build/
+*.class
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
