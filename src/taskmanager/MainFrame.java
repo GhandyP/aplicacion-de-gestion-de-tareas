@@ -57,7 +57,7 @@ public final class MainFrame extends JFrame {
         super("Task Manager");
         this.prepared = prepared;
         this.repository = prepared.repository();
-        this.appDirectory = prepared.localFile().toAbsolutePath().getParent().getParent();
+        this.appDirectory = prepared.appDirectory();
         buildUi();
         rebuildFacetFilters();
         setStatus(prepared.status());
@@ -359,15 +359,20 @@ public final class MainFrame extends JFrame {
 
     private void importFromObsidian() {
         try {
-            Optional<Path> source = SourceCsvFinder.findLargest(prepared.sourceRoot());
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(prepared.sourceRoot());
+            Optional<Path> source = discovery.selected();
+            String problems = discovery.hasProblems()
+                    ? "\n\nSome folders could not be read and were skipped:\n"
+                            + String.join("\n", discovery.problems())
+                    : "";
             if (source.isEmpty()) {
-                showInfo("No *_all.csv export was found under:\n" + prepared.sourceRoot());
+                showInfo("No *_all.csv export was found under:\n" + prepared.sourceRoot() + problems);
                 return;
             }
             List<Task> imported = TaskRepository.importFrom(source.get());
             int choice = JOptionPane.showConfirmDialog(this,
                     "Replace the local task list with " + imported.size() + " tasks from:\n"
-                            + source.get() + "?\n\nLocal edits not exported will be lost.",
+                            + source.get() + "?\n\nLocal edits not exported will be lost." + problems,
                     "Refresh from Obsidian", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (choice != JOptionPane.YES_OPTION) {
                 return;

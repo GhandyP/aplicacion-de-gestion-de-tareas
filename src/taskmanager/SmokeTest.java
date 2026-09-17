@@ -12,8 +12,9 @@ public final class SmokeTest {
     private SmokeTest() {
     }
 
-    public static String run(Path appDirectory) throws IOException {
-        AppStartup.Prepared prepared = AppStartup.prepare(appDirectory);
+    public static String run(AppConfig config) throws IOException {
+        boolean hadLocalFile = Files.isRegularFile(config.localFile());
+        AppStartup.Prepared prepared = AppStartup.prepare(config);
         List<Task> tasks = prepared.repository().tasks();
         for (Task task : tasks) {
             if (task.values().size() != Task.FIELD_COUNT) {
@@ -29,8 +30,13 @@ public final class SmokeTest {
         if (!CsvCodec.read(new StringReader(writer.toString())).equals(sample)) {
             throw new IOException("Smoke check CSV round-trip failed");
         }
-        if (!Files.isRegularFile(prepared.localFile())) {
-            throw new IOException("Smoke check local file was not created: " + prepared.localFile());
+        if (prepared.importedSource().isPresent() && !Files.isRegularFile(prepared.localFile())) {
+            throw new IOException("Smoke check: a successful import must persist the local file: "
+                    + prepared.localFile());
+        }
+        if (!hadLocalFile && prepared.importedSource().isEmpty() && Files.exists(prepared.localFile())) {
+            throw new IOException("Smoke check: a run without a source must not create a local file: "
+                    + prepared.localFile());
         }
 
         long completed = tasks.stream().filter(Task::isCompleted).count();

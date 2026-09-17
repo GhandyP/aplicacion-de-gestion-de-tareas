@@ -14,9 +14,10 @@ public final class Main {
 
     public static void main(String[] args) {
         Path appDirectory = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        AppConfig config = AppConfig.forCurrentProcess(appDirectory);
         if (hasArgument(args, "--smoke-test")) {
             try {
-                System.out.println(SmokeTest.run(appDirectory));
+                System.out.println(SmokeTest.run(config));
             } catch (IOException | RuntimeException error) {
                 error.printStackTrace(System.err);
                 System.exit(1);
@@ -25,7 +26,7 @@ public final class Main {
         }
 
         try {
-            AppStartup.Prepared prepared = AppStartup.prepare(appDirectory);
+            AppStartup.Prepared prepared = AppStartup.prepare(config);
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             SwingUtilities.invokeLater(() -> new MainFrame(prepared).setVisible(true));
         } catch (Exception error) {

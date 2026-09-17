@@ -6,23 +6,197 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /** Dependency-free behavioral tests. Run with: ./run-tests.sh */
 public final class TaskManagerTests {
+    private static int testsRun;
+
     private TaskManagerTests() {
     }
 
     public static void main(String[] args) throws Exception {
-        testQuotedCsvParsingAndRoundTrip();
-        testLargestSourceDiscoveryIsDeterministic();
-        testTaskFilteringByTextAndFacets();
-        testCompletionAndPostponementBehavior();
-        System.out.println("ALL_TESTS_PASSED 4");
+        runTest("quoted CSV parsing and round-trip", TaskManagerTests::testQuotedCsvParsingAndRoundTrip);
+        runTest("largest source discovery is deterministic",
+                TaskManagerTests::testLargestSourceDiscoveryIsDeterministic);
+        runTest("task filtering by text and facets", TaskManagerTests::testTaskFilteringByTextAndFacets);
+        runTest("completion and postponement behavior",
+                TaskManagerTests::testCompletionAndPostponementBehavior);
+        runTest("first run without a source creates no empty local file",
+                TaskManagerTests::testFirstRunWithoutSourceDoesNotCreateEmptyLocalFile);
+        runTest("configured paths override defaults", TaskManagerTests::testConfiguredPathsOverrideDefaults);
+        runTest("source selection is pure and deterministic",
+                TaskManagerTests::testSourceSelectionIsPureAndDeterministic);
+        runTest("unreadable source is reported as a checked failure",
+                TaskManagerTests::testUnreadableSourceIsReportedNotThrownUnchecked);
+        runTest("prepared result carries the application directory",
+                TaskManagerTests::testPreparedCarriesTheApplicationDirectory);
+        System.out.println("ALL_TESTS_PASSED " + testsRun);
+    }
+
+    @FunctionalInterface
+    private interface TestBody {
+        void run() throws Exception;
+    }
+
+    private static void runTest(String name, TestBody body) throws Exception {
+        try {
+            body.run();
+            testsRun++;
+        } catch (AssertionError failure) {
+            throw new AssertionError("FAILED " + name + ": " + failure.getMessage(), failure);
+        }
+    }
+
+    private static void testFirstRunWithoutSourceDoesNotCreateEmptyLocalFile() throws IOException {
+        Path appDirectory = Files.createTempDirectory("task-startup-test");
+        Path sourceRoot = Files.createTempDirectory("task-empty-source");
+        try {
+            AppConfig config = AppConfig.resolve(Map.of(AppConfig.SOURCE_ROOT_ENV, sourceRoot.toString()),
+                    appDirectory, appDirectory);
+
+            AppStartup.Prepared first = AppStartup.prepare(config);
+            check(first.importedSource().isEmpty(), "no import happens without a source export");
+            check(!Files.exists(first.localFile()),
+                    "a first run without a source must not create an empty local file, because it"
+                            + " silently disables auto-import on every later launch");
+            check(first.status().contains(sourceRoot.toString()),
+                    "the status reports which source root was searched");
+
+            List<List<String>> exportRows = new ArrayList<>();
+            exportRows.add(Task.SOURCE_HEADERS);
+            exportRows.add(List.of("Imported later", "Work", "", "2026-09-20", "No", "English", "",
+                    "", "Project", "", "Actionable", "High", "", "Planning"));
+            StringWriter exportText = new StringWriter();
+            CsvCodec.write(exportText, exportRows);
+            Files.writeString(sourceRoot.resolve("vault_all.csv"), exportText.toString(),
+                    StandardCharsets.UTF_8);
+
+            AppStartup.Prepared second = AppStartup.prepare(config);
+            check(second.importedSource().isPresent(),
+                    "a later launch imports automatically once an export appears instead of staying blocked");
+            check(second.repository().size() == 1, "the later export is imported");
+            check(Files.isRegularFile(second.localFile()), "a successful import persists the local file");
+        } finally {
+            deleteTree(appDirectory);
+            deleteTree(sourceRoot);
+        }
+    }
+
+    private static void testPreparedCarriesTheApplicationDirectory() throws IOException {
+        Path appDirectory = Files.createTempDirectory("task-prepared-test");
+        Path dataDirectory = Files.createTempDirectory("task-prepared-data");
+        try {
+            AppConfig config = AppConfig.resolve(
+                    Map.of(AppConfig.DATA_DIRECTORY_ENV, dataDirectory.toString(),
+                            AppConfig.SOURCE_ROOT_ENV, dataDirectory.resolve("no-source").toString()),
+                    appDirectory, appDirectory);
+            AppStartup.Prepared prepared = AppStartup.prepare(config);
+
+            check(prepared.localFile().equals(dataDirectory.resolve("tasks.csv")),
+                    "the local file follows the configured data directory");
+            check(prepared.appDirectory().equals(appDirectory.toAbsolutePath().normalize()),
+                    "the application directory must not be derived from the local file path");
+            check(prepared.sourceRoot().equals(dataDirectory.resolve("no-source")),
+                    "the prepared result exposes the configured source root");
+        } finally {
+            deleteTree(appDirectory);
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static void testConfiguredPathsOverrideDefaults() throws IOException {
+        Path appDirectory = Files.createTempDirectory("task-config-test");
+        Path userHome = Files.createTempDirectory("task-home-test");
+        Path elsewhere = Files.createTempDirectory("task-data-test");
+        try {
+            AppConfig defaults = AppConfig.resolve(Map.of(), appDirectory, userHome);
+            check(defaults.appDirectory().equals(appDirectory.toAbsolutePath().normalize()),
+                    "the application directory is normalized");
+            check(defaults.dataDirectory().equals(appDirectory.resolve("data")),
+                    "the default data directory is app/data");
+            check(defaults.localFile().equals(appDirectory.resolve("data").resolve("tasks.csv")),
+                    "the default local file is app/data/tasks.csv");
+            check(defaults.sourceRoot().equals(userHome.resolve("Documents").resolve("Obsidian Vault")
+                    .resolve("GDT").resolve("01_Tareas")), "the default source root lives under the user home");
+
+            AppConfig relative = AppConfig.resolve(
+                    Map.of(AppConfig.DATA_DIRECTORY_ENV, "local-data"), appDirectory, userHome);
+            check(relative.dataDirectory().equals(appDirectory.resolve("local-data")),
+                    "a relative data directory resolves against the application directory");
+
+            AppConfig absolute = AppConfig.resolve(
+                    Map.of(AppConfig.DATA_DIRECTORY_ENV, elsewhere.toString(),
+                            AppConfig.SOURCE_ROOT_ENV, "~/Exports"),
+                    appDirectory, userHome);
+            check(absolute.dataDirectory().equals(elsewhere.toAbsolutePath().normalize()),
+                    "an absolute data directory is used as given");
+            check(absolute.localFile().equals(elsewhere.resolve("tasks.csv")),
+                    "the local file follows the configured data directory");
+            check(absolute.sourceRoot().equals(userHome.resolve("Exports")),
+                    "a tilde source root expands to the user home");
+
+            AppConfig blank = AppConfig.resolve(
+                    Map.of(AppConfig.DATA_DIRECTORY_ENV, "   ", AppConfig.SOURCE_ROOT_ENV, ""),
+                    appDirectory, userHome);
+            check(blank.dataDirectory().equals(appDirectory.resolve("data")),
+                    "a blank data directory falls back to the default");
+            check(blank.sourceRoot().equals(defaults.sourceRoot()),
+                    "a blank source root falls back to the default");
+        } finally {
+            deleteTree(appDirectory);
+            deleteTree(userHome);
+            deleteTree(elsewhere);
+        }
+    }
+
+    private static void testSourceSelectionIsPureAndDeterministic() {
+        check(SourceCsvFinder.selectLargest(List.of()).isEmpty(), "no candidates selects nothing");
+
+        Path tieA = Path.of("ties", "a_all.csv");
+        Path tieB = Path.of("ties", "b_all.csv");
+        Path biggest = Path.of("other", "c_all.csv");
+        List<SourceCsvFinder.Candidate> candidates = List.of(
+                new SourceCsvFinder.Candidate(tieB, 10L),
+                new SourceCsvFinder.Candidate(biggest, 99L),
+                new SourceCsvFinder.Candidate(tieA, 10L));
+        check(SourceCsvFinder.selectLargest(candidates).orElseThrow().equals(biggest),
+                "the largest candidate wins regardless of input order");
+        check(SourceCsvFinder.selectLargest(List.of(
+                new SourceCsvFinder.Candidate(tieB, 10L),
+                new SourceCsvFinder.Candidate(tieA, 10L))).orElseThrow().equals(tieA),
+                "same-size candidates fall back to lexicographic order");
+    }
+
+    private static void testUnreadableSourceIsReportedNotThrownUnchecked() throws IOException {
+        Path root = Files.createTempDirectory("task-unreadable-test");
+        Path restricted = Files.createDirectory(root.resolve("restricted"));
+        Path export = root.resolve("vault_all.csv");
+        Files.writeString(export, "content", StandardCharsets.UTF_8);
+        try {
+            Files.setPosixFilePermissions(restricted, Set.of());
+            if (Files.isReadable(restricted)) {
+                System.out.println("SKIPPED unreadable source diagnostic: permissions not enforced for this user");
+                return;
+            }
+
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(root);
+            check(discovery.selected().orElseThrow().equals(export.toAbsolutePath().normalize()),
+                    "an unreadable folder must not stop discovery of readable exports");
+            check(discovery.hasProblems(), "the unreadable folder is reported instead of failing silently");
+            check(discovery.problems().stream().anyMatch(problem -> problem.contains("restricted")),
+                    "the reported problem names the unreadable path, got: " + discovery.problems());
+        } finally {
+            Files.setPosixFilePermissions(restricted, PosixFilePermissions.fromString("rwx------"));
+            deleteTree(root);
+        }
     }
 
     private static void testQuotedCsvParsingAndRoundTrip() throws IOException {
@@ -51,15 +225,16 @@ public final class TaskManagerTests {
             Files.writeString(second, "this is the largest export", StandardCharsets.UTF_8);
             Files.writeString(ignored, "this should not be selected", StandardCharsets.UTF_8);
 
-            Path selected = SourceCsvFinder.findLargest(root).orElseThrow();
-            check(selected.equals(second), "largest *_all.csv selected");
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(root);
+            check(discovery.selected().orElseThrow().equals(second), "largest *_all.csv selected");
+            check(!discovery.hasProblems(), "a readable tree reports no problems: " + discovery.problems());
 
             Path tieRoot = Files.createDirectories(root.resolve("ties"));
             Path tieA = tieRoot.resolve("a_all.csv");
             Path tieB = tieRoot.resolve("b_all.csv");
             Files.writeString(tieA, "same", StandardCharsets.UTF_8);
             Files.writeString(tieB, "same", StandardCharsets.UTF_8);
-            check(SourceCsvFinder.findLargest(tieRoot).orElseThrow().equals(tieA),
+            check(SourceCsvFinder.discover(tieRoot).selected().orElseThrow().equals(tieA),
                     "same-size source selection is deterministic");
         } finally {
             deleteTree(root);
