@@ -39,7 +39,7 @@ of fragile persistence.
 | ID | Unit | Fragility addressed | Status | Commit |
 |---|---|---|---|---|
 | T1 | Provision JDK 21 and capture a green baseline with `bash run-tests.sh` | environment blocker | done | see Baseline evidence |
-| T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | pending | - |
+| T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | done | `52614d0` |
 | T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | pending | - |
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | pending | - |
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
@@ -54,6 +54,27 @@ of fragile persistence.
 - `bash run-tests.sh` -> `ALL_TESTS_PASSED 4`, exit 0.
 - `bash run-app.sh --smoke-test` -> `SMOKE_TEST_PASSED tasks=0 active=0 completed=0`, exit 0.
 - See "T2 observation": the smoke output above reflects an existing empty `data/tasks.csv`, so smoke mode is currently stateful and non-deterministic across machines. T2 makes it explicit.
+
+## T2 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 9` (was 4), exit 0. The unreadable-folder test really exercised the diagnostic path (it printed no SKIPPED note).
+- End-to-end smoke proof of the fixed trap, using `TASKMANAGER_DATA_DIR` / `TASKMANAGER_SOURCE_ROOT`:
+  1. Clean data directory, no source -> `SMOKE_TEST_PASSED tasks=0`, and **no** `tasks.csv` created.
+  2. Export appears in the source root -> next launch imports automatically, `tasks=1`, local file persisted.
+  3. Repository defaults (existing local file) -> still loads and passes.
+- Commit `52614d0`, ~408 added lines: at the 400-line review-workload mark for one unit. Reported to the user; not split further because the pieces are one behavior change.
+
+### Findings discovered during T2 that were not in the original reconnaissance
+
+1. **Unreadable folder escaped unchecked.** The original comparator wrapped `Files.size` failures in `IllegalStateException`, but the real traversal risk is different: an unreadable *directory* makes `Files.walk` throw `UncheckedIOException`, which escapes any caller catching `IOException`. Fixed by using `Files.walkFileTree` with `visitFileFailed`/`postVisitDirectory`, which continues past unreadable entries and reports them.
+2. **`MainFrame` derived the application directory from the local file path** (`prepared.localFile().getParent().getParent()`, assuming exactly `<app>/data/tasks.csv`). Making the data directory configurable would have silently pointed `exports/` at the wrong place. Fixed by carrying `appDirectory` on `Prepared`.
+3. **`Files.size` does not fail on a file without read permission** (`stat` only needs the parent directory to be searchable). The first version of the test encoding that assumption failed for the right reason and was replaced with the traversal case above.
+4. **Smoke mode was stateful**: its outcome depended on whether a local `data/tasks.csv` already existed, so the first-run path was never exercised in this repository. Configuration overrides now make that path deterministic.
+5. **The test runner asserted a hardcoded count** (`ALL_TESTS_PASSED 4`). Replaced with a real counter plus per-test failure names, so adding a test can no longer leave a lying total.
+
+### Resolved decision
+
+- `SmokeTest` stays in `src/taskmanager/`: `--smoke-test` is a shipped headless mode of `Main`, not test scaffolding, and moving it would force the run script to compile test sources. Rationale recorded here instead of moving the file.
 
 ## Known fragilities from reconnaissance
 
