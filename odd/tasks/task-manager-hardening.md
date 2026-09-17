@@ -38,7 +38,7 @@ of fragile persistence.
 
 | ID | Unit | Fragility addressed | Status | Commit |
 |---|---|---|---|---|
-| T1 | Provision JDK 21 and capture a green baseline with `bash run-tests.sh` | environment blocker | pending | n/a (no repo change) |
+| T1 | Provision JDK 21 and capture a green baseline with `bash run-tests.sh` | environment blocker | done | see Baseline evidence |
 | T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | pending | - |
 | T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | pending | - |
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | pending | - |
@@ -47,6 +47,13 @@ of fragile persistence.
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps | pending | - |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity | pending | - |
+
+## Baseline evidence (T1)
+
+- `java -version` / `javac -version`: OpenJDK `21.0.12.1+1-1-deb13u1` (Debian), from `openjdk-21-jdk-headless`.
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 4`, exit 0.
+- `bash run-app.sh --smoke-test` -> `SMOKE_TEST_PASSED tasks=0 active=0 completed=0`, exit 0.
+- See "T2 observation": the smoke output above reflects an existing empty `data/tasks.csv`, so smoke mode is currently stateful and non-deterministic across machines. T2 makes it explicit.
 
 ## Known fragilities from reconnaissance
 
