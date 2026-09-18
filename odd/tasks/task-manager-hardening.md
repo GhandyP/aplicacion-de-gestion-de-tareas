@@ -45,8 +45,8 @@ of fragile persistence.
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
-| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps | pending | - |
-| T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity | pending | - |
+| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus advisory `R2-DuplicateDefaultSourceRoot` | pending | - |
+| T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
 
 ## Baseline evidence (T1)
 
@@ -75,6 +75,22 @@ of fragile persistence.
 ### Resolved decision
 
 - `SmokeTest` stays in `src/taskmanager/`: `--smoke-test` is a shipped headless mode of `Main`, not test scaffolding, and moving it would force the run script to compile test sources. Rationale recorded here instead of moving the file.
+
+## Review history
+
+| Candidate | Lineage | Tier | Lenses | Outcome |
+|---|---|---|---|---|
+| Plan commit `5f6f36e` | `review-1720b97ec6592817` | medium | reliability | approved, authority burned |
+| T2 + docs (`e6e0567`, `52614d0`, `b1cbd69`) | `review-8e1a13981d69edba` | high | risk, resilience, readability, reliability | approved, authority burned |
+
+Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
+
+### Advisory findings from the T2 review (non-blocking, informational)
+
+The closure states that none of these opened a correction, and that they are later work rather than a reason to re-run review on that candidate.
+
+1. `R2-DuplicateDefaultSourceRoot` (readability, WARNING, `AppConfig.java:17`): the default source root path is now written twice, once in `AppConfig` and once in `SourceCsvFinder.defaultRoot(Path userHome)`. Worse, after T2 that finder method has no callers at all, so it is duplicate dead code. Scheduled into T8: delete `SourceCsvFinder.defaultRoot` so path defaults live only in `AppConfig`.
+2. `R4-removed-launcher` (resilience, WARNING, `run.sh:1-6`): the duplicate launcher was deleted, which is correct, but nothing tells a user who was invoking it. Scheduled into T9: document that `run-app.sh` is the only launcher.
 
 ## Known fragilities from reconnaissance
 
