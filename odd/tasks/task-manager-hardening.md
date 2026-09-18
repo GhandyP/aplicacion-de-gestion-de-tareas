@@ -40,7 +40,7 @@ of fragile persistence.
 |---|---|---|---|---|
 | T1 | Provision JDK 21 and capture a green baseline with `bash run-tests.sh` | environment blocker | done | see Baseline evidence |
 | T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | done | `52614d0` |
-| T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | pending | - |
+| T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | done | `5db0cb5` |
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | pending | - |
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
@@ -82,6 +82,7 @@ of fragile persistence.
 |---|---|---|---|---|
 | Plan commit `5f6f36e` | `review-1720b97ec6592817` | medium | reliability | approved, authority burned |
 | T2 + docs (`e6e0567`, `52614d0`, `b1cbd69`) | `review-8e1a13981d69edba` | high | risk, resilience, readability, reliability | approved, authority burned |
+| Review record `3aea4e4` (doc-only increment) | `review-1bdd65b875ce3f69` (no lineage created) | n/a | n/a | **left unreviewed by explicit user decision** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -91,6 +92,44 @@ The closure states that none of these opened a correction, and that they are lat
 
 1. `R2-DuplicateDefaultSourceRoot` (readability, WARNING, `AppConfig.java:17`): the default source root path is now written twice, once in `AppConfig` and once in `SourceCsvFinder.defaultRoot(Path userHome)`. Worse, after T2 that finder method has no callers at all, so it is duplicate dead code. Scheduled into T8: delete `SourceCsvFinder.defaultRoot` so path defaults live only in `AppConfig`.
 2. `R4-removed-launcher` (resilience, WARNING, `run.sh:1-6`): the duplicate launcher was deleted, which is correct, but nothing tells a user who was invoking it. Scheduled into T9: document that `run-app.sh` is the only launcher.
+
+## Open infrastructure issue: native review unusable
+
+The third candidate could not be reviewed, and **not** because of its content:
+
+1. First START returned `consent-binding-stale` (`4af99601-2327-45eb-9bc9-8b1c5f82877a`), `lineage_created: false`.
+2. Second START returned `native-status-unavailable` with `error_code: cancelled` and `inventory_complete: false`.
+3. Nothing was mutated by either attempt (`mutation_performed: false`), and the repository stayed clean.
+
+Evidence found while diagnosing (circumstantial, causality not proven):
+
+- `.git/gentle-ai/REVIEW-MAINTENANCE.lock` exists, is 0 bytes, and its mtime is ~17 hours older than the diagnosis time.
+- No process holds it (`lsof` shows no holder) and no `gentle-ai` process is running.
+- `.git/gentle-ai/review-transactions/v2/LOCK` also exists.
+- `gentle-ai review reclaim`, the route the facade maps for lock recovery, requires explicit `--lineage`, `--actor`, and `--reason`. It quarantines an incomplete store entry; it is not a lock-deleting command. No lineage was created, so there were no native values to supply and none were invented.
+
+**Disposition (user decision, 2026-09-18):** this candidate is left unreviewed. The real increment over the previously burned review is a single Markdown file, and the code inside the provider's accumulated range was already reviewed and burned as target `0e77d556`.
+
+**Follow-up, not scheduled:** investigate the stale maintenance lock before the next candidate that contains code, since every later unit will hit the same gate.
+
+## T3 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 14` (was 9), exit 0.
+- Three smoke scenarios, using temporary data and source directories:
+  1. No source -> `tasks=0`, no local file created.
+  2. Export imported -> `tasks=2`; a second launch reloads the local file the app itself wrote, so the strict rules accept the app's own id + 14 field format.
+  3. A hand-broken local file now fails with a diagnostic naming the row: `Malformed CSV at row 2: found 3 fields, expected 14 source fields with or without a leading id`. Before T3 that row was silently padded to fourteen fields.
+- Commit `5db0cb5`, 237 added lines.
+
+### What was actually silent before T3
+
+- `CsvCodec` had a branch commented "Be liberal about whitespace or malformed text after a closing quote" that appended whatever followed the closing quote, so `"abc"def` parsed as `abcdef` with no error. Whitespace between a closing quote and the delimiter is still tolerated on purpose (hand-edited exports pad there); any other trailing text is now a positioned failure.
+- `normalizeSourceValues` padded short rows and truncated long ones in **both** the source-import and the local-load paths, so a 13-field row became a valid-looking task with an empty last field, and a 15-field source row lost a field without warning.
+- The local file accepted any row with fifteen **or more** fields and ignored the extras.
+
+### New finding, scheduled into T8
+
+Header detection is name-based only: `TaskRepository.isHeader` matches a first cell of `id` or `nombre`. A source export whose header row starts with any other name is therefore not a header at all, and because a header row has exactly fourteen fields it passes the new field-count check and is imported as a task. The fix is to recognise any of the fourteen known header names, not just the first, and to cover it with a test.
 
 ## Known fragilities from reconnaissance
 
