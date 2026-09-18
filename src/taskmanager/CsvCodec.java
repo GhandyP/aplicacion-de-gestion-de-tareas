@@ -75,6 +75,10 @@ public final class CsvCodec {
         boolean inQuotes = false;
         boolean afterClosingQuote = false;
         boolean recordStarted = false;
+        int line = 1;
+        int column = 1;
+        int quoteLine = 1;
+        int quoteColumn = 1;
 
         for (int index = 0; index < input.length(); index++) {
             char current = input.charAt(index);
@@ -84,11 +88,19 @@ public final class CsvCodec {
                     if (index + 1 < input.length() && input.charAt(index + 1) == '"') {
                         field.append('"');
                         index++;
+                        column += 2;
                     } else {
                         inQuotes = false;
                         afterClosingQuote = true;
+                        column++;
                     }
                 } else {
+                    if (current == '\n') {
+                        line++;
+                        column = 1;
+                    } else {
+                        column++;
+                    }
                     field.append(current);
                 }
                 continue;
@@ -100,6 +112,7 @@ public final class CsvCodec {
                     field.setLength(0);
                     afterClosingQuote = false;
                     recordStarted = true;
+                    column++;
                 } else if (current == '\n' || current == '\r') {
                     row.add(field.toString());
                     addRow(rows, row);
@@ -110,11 +123,14 @@ public final class CsvCodec {
                     if (current == '\r' && index + 1 < input.length() && input.charAt(index + 1) == '\n') {
                         index++;
                     }
+                    line++;
+                    column = 1;
+                } else if (Character.isWhitespace(current)) {
+                    // Tolerated: hand-edited exports sometimes pad between a field and the delimiter.
+                    column++;
                 } else {
-                    // Be liberal about whitespace or malformed text after a closing quote.
-                    field.append(current);
-                    afterClosingQuote = false;
-                    recordStarted = true;
+                    throw CsvFormatException.atPosition(line, column,
+                            "unexpected text after a closing quote: '" + current + "'");
                 }
                 continue;
             }
@@ -123,6 +139,7 @@ public final class CsvCodec {
                 row.add(field.toString());
                 field.setLength(0);
                 recordStarted = true;
+                column++;
             } else if (current == '\n' || current == '\r') {
                 row.add(field.toString());
                 addRow(rows, row);
@@ -132,17 +149,23 @@ public final class CsvCodec {
                 if (current == '\r' && index + 1 < input.length() && input.charAt(index + 1) == '\n') {
                     index++;
                 }
+                line++;
+                column = 1;
             } else if (current == '"' && field.length() == 0) {
                 inQuotes = true;
                 recordStarted = true;
+                quoteLine = line;
+                quoteColumn = column;
+                column++;
             } else {
                 field.append(current);
                 recordStarted = true;
+                column++;
             }
         }
 
         if (inQuotes) {
-            throw new IOException("Unterminated quoted CSV field");
+            throw CsvFormatException.atPosition(quoteLine, quoteColumn, "unterminated quoted field");
         }
         if (recordStarted || !row.isEmpty() || field.length() > 0 || afterClosingQuote) {
             row.add(field.toString());

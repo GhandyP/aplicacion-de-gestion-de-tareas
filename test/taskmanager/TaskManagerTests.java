@@ -38,6 +38,15 @@ public final class TaskManagerTests {
                 TaskManagerTests::testUnreadableSourceIsReportedNotThrownUnchecked);
         runTest("prepared result carries the application directory",
                 TaskManagerTests::testPreparedCarriesTheApplicationDirectory);
+        runTest("strict CSV rejects trailing garbage",
+                TaskManagerTests::testStrictCsvRejectsTrailingGarbage);
+        runTest("CSV reports the unterminated quote position",
+                TaskManagerTests::testCsvReportsUnterminatedQuotePosition);
+        runTest("source import rejects the wrong field count",
+                TaskManagerTests::testSourceImportRejectsWrongFieldCount);
+        runTest("local file rejects duplicate ids", TaskManagerTests::testLocalFileRejectsDuplicateIds);
+        runTest("local file rejects the wrong field count",
+                TaskManagerTests::testLocalFileRejectsWrongFieldCount);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -283,6 +292,130 @@ public final class TaskManagerTests {
         } finally {
             Files.deleteIfExists(localFile);
         }
+    }
+
+    private static void testStrictCsvRejectsTrailingGarbage() throws IOException {
+        List<List<String>> tolerated = CsvCodec.read(new StringReader("a,\"b\"  ,c\n"));
+        check(tolerated.get(0).equals(List.of("a", "b", "c")),
+                "whitespace between a closing quote and the delimiter is tolerated");
+
+        try {
+            CsvCodec.read(new StringReader("ok,fine\n\"a\"b,c\n"));
+            check(false, "text after a closing quote must be rejected, not silently concatenated");
+        } catch (CsvFormatException expected) {
+            check(expected.line() == 2, "the failure reports the physical line, got " + expected.line());
+            check(expected.column() == 4, "the failure reports the column, got " + expected.column());
+        }
+    }
+
+    private static void testCsvReportsUnterminatedQuotePosition() throws IOException {
+        try {
+            CsvCodec.read(new StringReader("fine,ok\n\"unterminated\nnext,row\n"));
+            check(false, "an unterminated quoted field must be rejected");
+        } catch (CsvFormatException expected) {
+            check(expected.line() == 2,
+                    "the failure reports where the quoted field opened, got " + expected.line());
+            check(expected.column() == 1,
+                    "the failure reports the opening column, got " + expected.column());
+        }
+    }
+
+    private static void testSourceImportRejectsWrongFieldCount() throws IOException {
+        Path source = Files.createTempFile("task-source-fields", ".csv");
+        try {
+            List<List<String>> valid = new ArrayList<>();
+            valid.add(Task.SOURCE_HEADERS);
+            valid.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, valid);
+            check(TaskRepository.importFrom(source).size() == 1, "a complete source row still imports");
+
+            List<List<String>> shortRow = new ArrayList<>();
+            shortRow.add(Task.SOURCE_HEADERS);
+            shortRow.add(fieldRow(Task.FIELD_COUNT - 1));
+            writeRows(source, shortRow);
+            try {
+                TaskRepository.importFrom(source);
+                check(false, "a short source row must be rejected instead of silently padded");
+            } catch (CsvFormatException expected) {
+                check(expected.getMessage().contains("row 2"),
+                        "the failure names the row, got: " + expected.getMessage());
+            }
+
+            List<List<String>> longRow = new ArrayList<>();
+            longRow.add(Task.SOURCE_HEADERS);
+            longRow.add(fieldRow(Task.FIELD_COUNT + 1));
+            writeRows(source, longRow);
+            try {
+                TaskRepository.importFrom(source);
+                check(false, "an over-long source row must be rejected instead of silently truncated");
+            } catch (CsvFormatException expected) {
+                check(expected.getMessage().contains(String.valueOf(Task.FIELD_COUNT + 1)),
+                        "the failure reports the field count found, got: " + expected.getMessage());
+            }
+        } finally {
+            Files.deleteIfExists(source);
+        }
+    }
+
+    private static void testLocalFileRejectsDuplicateIds() throws IOException {
+        Path localFile = Files.createTempFile("task-local-duplicates", ".csv");
+        try {
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(TaskRepository.LOCAL_HEADERS);
+            rows.add(rowWithId("dup"));
+            rows.add(rowWithId("dup"));
+            writeRows(localFile, rows);
+
+            try {
+                new TaskRepository(localFile);
+                check(false, "duplicate ids in the local file must be reported, not silently renamed");
+            } catch (CsvFormatException expected) {
+                check(expected.getMessage().contains("dup"),
+                        "the failure names the duplicated id, got: " + expected.getMessage());
+            }
+        } finally {
+            Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static void testLocalFileRejectsWrongFieldCount() throws IOException {
+        Path localFile = Files.createTempFile("task-local-fields", ".csv");
+        try {
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(TaskRepository.LOCAL_HEADERS);
+            rows.add(fieldRow(10));
+            writeRows(localFile, rows);
+
+            try {
+                new TaskRepository(localFile);
+                check(false, "a local row with the wrong field count must be reported");
+            } catch (CsvFormatException expected) {
+                check(expected.getMessage().contains("row 2"),
+                        "the failure names the row, got: " + expected.getMessage());
+            }
+        } finally {
+            Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static List<String> fieldRow(int fieldCount) {
+        List<String> row = new ArrayList<>(fieldCount);
+        for (int index = 0; index < fieldCount; index++) {
+            row.add("field" + (index + 1));
+        }
+        return row;
+    }
+
+    private static List<String> rowWithId(String id) {
+        List<String> row = new ArrayList<>(fieldRow(Task.FIELD_COUNT));
+        row.add(0, id);
+        return row;
+    }
+
+    private static void writeRows(Path path, List<List<String>> rows) throws IOException {
+        StringWriter text = new StringWriter();
+        CsvCodec.write(text, rows);
+        Files.writeString(path, text.toString(), StandardCharsets.UTF_8);
     }
 
     private static Task task(String id, String name, String context, String dueDate,

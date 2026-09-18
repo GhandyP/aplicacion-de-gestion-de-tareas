@@ -8,6 +8,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -149,11 +150,17 @@ public final class TaskRepository {
         List<List<String>> rows = CsvCodec.read(sourceFile);
         List<Task> imported = new ArrayList<>();
         Set<String> ids = new HashSet<>();
-        Map<String, Integer> occurrences = new java.util.HashMap<>();
+        Map<String, Integer> occurrences = new HashMap<>();
         int ordinal = 1;
+        int rowIndex = 0;
         for (List<String> row : rows) {
+            rowIndex++;
             if (isHeader(row) || isBlankRow(row)) {
                 continue;
+            }
+            if (row.size() != Task.FIELD_COUNT) {
+                throw CsvFormatException.atRow(rowIndex, "found " + row.size() + " fields, expected "
+                        + Task.FIELD_COUNT + " source fields");
             }
             List<String> values = normalizeSourceValues(row);
             String signature = String.join("\u001f", values);
@@ -201,25 +208,35 @@ public final class TaskRepository {
         }
         List<List<String>> rows = CsvCodec.read(localFile);
         Set<String> ids = new HashSet<>();
+        Map<String, Integer> explicitIds = new HashMap<>();
         int ordinal = 1;
+        int rowIndex = 0;
         for (List<String> row : rows) {
+            rowIndex++;
             if (isHeader(row) || isBlankRow(row)) {
                 continue;
             }
             String id;
             List<String> values;
-            if (row.size() >= Task.FIELD_COUNT + 1) {
+            if (row.size() == Task.FIELD_COUNT + 1) {
                 id = row.get(0).trim();
                 values = normalizeSourceValues(row.subList(1, row.size()));
-            } else {
+            } else if (row.size() == Task.FIELD_COUNT) {
                 id = "";
                 values = normalizeSourceValues(row);
+            } else {
+                throw CsvFormatException.atRow(rowIndex, "found " + row.size() + " fields, expected "
+                        + Task.FIELD_COUNT + " source fields with or without a leading id");
             }
             if (id.isBlank()) {
-                id = Task.generatedId(values, ordinal);
-            }
-            if (!ids.add(id)) {
-                id = uniqueId(id, ids);
+                id = uniqueId(Task.generatedId(values, ordinal), ids);
+            } else {
+                Integer firstRow = explicitIds.putIfAbsent(id, rowIndex);
+                if (firstRow != null) {
+                    throw CsvFormatException.atRow(rowIndex,
+                            "duplicate task id '" + id + "' (already used in row " + firstRow + ")");
+                }
+                ids.add(id);
             }
             tasks.add(new Task(id, values));
             ordinal++;
