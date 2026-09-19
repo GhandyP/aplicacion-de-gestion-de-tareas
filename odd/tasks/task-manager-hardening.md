@@ -42,7 +42,7 @@ of fragile persistence.
 | T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | done | `52614d0` |
 | T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | done | `5db0cb5` |
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | done | `7501f87` |
-| T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
+| T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | done | `db361b4` |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | pending | - |
@@ -185,6 +185,28 @@ The provider itself asks for a native operation failure to be resolved. That is 
 ## Review cost trend, and why it matters here
 
 The provider projects the **accumulated range** from `3a04c77`, not the increment, so every new candidate re-reviews all previously reviewed code. Four consecutive reviews of this branch cost four model runs each over prompts that grew from ~53 KB to ~90 KB, and the last two reviews returned the same five advisory findings with nothing new. The churn is real and it is structural, not accidental: as long as the branch keeps growing in single-commit steps, each step pays for the whole history. The practical implication is not to skip the gate but to reduce the number of candidates: land the remaining units and let T8 address the accumulated findings, instead of expecting new findings from re-reviewing unchanged code.
+
+## T5 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 20` (was 17), exit 0.
+- Smoke green in three scenarios: no source, first import, and reload of the app-written file.
+- Commit `db361b4`, 76 added lines.
+
+### The defect, and the line that made it silent
+
+```java
+LocalDate base = parse(current).orElseGet(() -> LocalDate.now(clock));
+```
+
+Any unparseable due date became today, and the result was formatted and stored. The user saw a postpone succeed and a plausible date appear; the original value was gone. The red test proved it by asserting that the refusal message names the offending value while the test run showed the postpone "succeeding".
+
+### The line drawn deliberately
+
+A **blank** due date keeps shifting from today. That is a convenience for a task with no date yet, not a repair of corrupted data, so tightening it would have broken a legitimate flow. Only a non-blank, unparseable date is refused. Two tests pin both halves so neither can drift.
+
+### Skipped review, declared
+
+Candidate `sha256:def774b2…` (the documentation commit `1e924d7`) was **not** sent to review. Ground: the increment since the previously burned review (`544bb9b`) is one file, `odd/tasks/task-manager-hardening.md`, plus five lines, verified with `git diff --stat`, and `git diff 544bb9b..HEAD -- src/ test/` is empty. My contract allows skipping the preflight for a trivial passive documentation-only edit, independently of any user disposition. The code inside the provider's accumulated range is byte-identical to what was reviewed and burned twice already (targets `1712d0c9` and `92f90641`), with an identical finding set. Recording it here so the skip is auditable and reversible.
 
 ## Known fragilities from reconnaissance
 
