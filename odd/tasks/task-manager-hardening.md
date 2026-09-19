@@ -45,7 +45,7 @@ of fragile persistence.
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
-| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus advisory `R2-DuplicateDefaultSourceRoot` | pending | - |
+| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, and `R3/R4-AtomicMovePortability` | pending | - |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
 
 ## Baseline evidence (T1)
@@ -83,6 +83,7 @@ of fragile persistence.
 | Plan commit `5f6f36e` | `review-1720b97ec6592817` | medium | reliability | approved, authority burned |
 | T2 + docs (`e6e0567`, `52614d0`, `b1cbd69`) | `review-8e1a13981d69edba` | high | risk, resilience, readability, reliability | approved, authority burned |
 | Review record `3aea4e4` (doc-only increment) | `review-1bdd65b875ce3f69` (no lineage created) | n/a | n/a | **left unreviewed by explicit user decision** |
+| T3 + T4 + docs (through `177676b`, tree `01f83a17`) | `review-b1178646de5500fd` | high | risk, resilience, readability, reliability | approved, authority burned |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -93,7 +94,24 @@ The closure states that none of these opened a correction, and that they are lat
 1. `R2-DuplicateDefaultSourceRoot` (readability, WARNING, `AppConfig.java:17`): the default source root path is now written twice, once in `AppConfig` and once in `SourceCsvFinder.defaultRoot(Path userHome)`. Worse, after T2 that finder method has no callers at all, so it is duplicate dead code. Scheduled into T8: delete `SourceCsvFinder.defaultRoot` so path defaults live only in `AppConfig`.
 2. `R4-removed-launcher` (resilience, WARNING, `run.sh:1-6`): the duplicate launcher was deleted, which is correct, but nothing tells a user who was invoking it. Scheduled into T9: document that `run-app.sh` is the only launcher.
 
-## Open infrastructure issue: native review unusable
+### Findings from the third review (all advisory, none blocking)
+
+Eight entries, which reduce to four distinct issues. Two are defects in code written during T4, and they are good catches:
+
+1. `R1/R4-BackupTimestampCollision` (`TaskRepository.java:174-175`): the backup name uses a seconds-resolution timestamp, so two replacements inside the same second overwrite each other and a backup is silently lost. Scheduled into T8.
+2. `R3/R4-AtomicMovePortability` (`TaskRepository.java:148-158`): `ATOMIC_MOVE` can fail on filesystems without atomic rename support. Scheduled into T8, where the fix is a documented fallback rather than a silent retry.
+3. `R3-unknown-header` (`TaskRepository.java:184-188`): already found during T3, scheduled into T8.
+4. `R2-DuplicateDefaultSourceRoot` (`SourceCsvFinder.java:100-106`): already found by the earlier review, scheduled into T8.
+
+### One partial admission, and how it was recovered
+
+The four-lens group was submitted once: three reviewers were admitted, and the `review-reliability` reviewer was refused at admission with `binding_mismatch`, because its result echoed a different artifact subject than the binding's `subject_hash`. The refusal did not consume the lens slot and preserved the rejected payload under `.git/gentle-ai/rejected-results/`. Per the refusal, the refused bytes were never resubmitted: a fresh STATUS was taken, it reoffered exactly that one slot, and only that slot was re-run. It was admitted and closed the review as approved.
+
+## Consent failures: corrected diagnosis
+
+**Correction (2026-09-18, after the T4 candidate was reviewed successfully):** the failures described below were NOT a broken native layer. The decisive evidence is `native_invocation_attempted: false` in the final `consent-binding-stale` response: the native side was never called, so nothing about the review authority store was at fault. The consent binding has a ten-minute life and is created before the model turn that answers it, so a long turn reliably produces `consent-binding-stale`. Issuing START again immediately, in a short turn, succeeds: that is how this candidate obtained its lineage, with no lock cleanup and no configuration change. The stale `REVIEW-MAINTENANCE.lock` and the `cancelled` status call remain unexplained, but they are not the blocker they were assumed to be.
+
+### Superseded diagnosis (kept for the record)
 
 The third candidate could not be reviewed, and **not** because of its content:
 
