@@ -448,6 +448,22 @@ That does not make the finding wrong. The inheritance is an implementation detai
 
 **The test is labelled a guard, not evidence.** It passes before and after, so it does not prove the fix; it protects the property from a future change. Calling it a red-then-green test would be exactly the kind of overstated coverage this document has been careful to avoid elsewhere.
 
+## The fourteenth review, and what it says about the loop
+
+Three findings, two of them mine from the previous round:
+
+1. `R3-relative-local-file-save` (`TaskRepository.java:166`) — real and precise. `writeTasks` guarded `createDirectories` against a null parent but passed that same parent straight to `createTempFile`, so half the guard implied an invariant the code did not check. One explicit requirement now states it for both uses, and the constructor already establishes it.
+2. `R4-duplicate-fallback-backup` — a direct consequence of the previous fix: on a filesystem without atomic rename, `replaceAll` copied the file aside and the fallback copied it again, leaving two identical backups per replacement. The caller now says whether it has already backed up.
+3. `R2-stale-status` — the status line, already rewritten this round. Informational.
+
+### Where this stops, stated plainly
+
+Each round has fixed what was flagged and the next round has found the adjacent thing. That is the loop working, and it is also a treadmill: the prompts are now ~174 KB per review, four model runs each, and the last four rounds have produced findings exclusively in the newest few lines of one file.
+
+The remaining category is the non-atomic replace on filesystems that cannot rename atomically. That path is now mitigated three ways (written to a temporary file, copied aside before the replace, and reported when it fails), and **no further code change can remove it**: the only way it stops existing is a filesystem that supports atomic rename. Reviewing it again buys nothing.
+
+The programme therefore stays closed. Any further findings on this rango are recorded as known and accepted, and the honest next input is a human reviewer reading the branch, not another automated round.
+
 ## Known fragilities from reconnaissance
 
 1. `MainFrame` is a 437-line god class: window construction, filtering, sorting, persistence actions, dialogs, exports (`MainFrame.java:71-428`).
