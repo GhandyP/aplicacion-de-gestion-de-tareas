@@ -253,8 +253,8 @@ public final class TaskRepository {
             return;
         }
         List<List<String>> rows = CsvCodec.read(localFile);
-        Set<String> ids = new HashSet<>();
-        Map<String, Integer> explicitIds = new HashMap<>();
+        Set<String> taken = new HashSet<>();
+        Map<String, Integer> firstUse = new HashMap<>();
         int ordinal = 1;
         int rowIndex = 0;
         for (List<String> row : rows) {
@@ -275,14 +275,19 @@ public final class TaskRepository {
                         + Task.FIELD_COUNT + " source fields with or without a leading id");
             }
             if (id.isBlank()) {
-                id = uniqueId(Task.generatedId(values, ordinal), ids);
+                // A legacy row without an id still gets a generated one, and a collision between two
+                // generated ids is renamed rather than fatal, because two identical legacy rows are
+                // legitimate.
+                id = uniqueId(Task.generatedId(values, ordinal), taken);
+                firstUse.put(id, rowIndex);
+            } else if (taken.contains(id)) {
+                // Taken may have been claimed by a generated id, which is exactly the collision this
+                // check exists for: sharing an id makes every lookup by id return the wrong task.
+                throw CsvFormatException.atRow(rowIndex, "duplicate task id '" + id
+                        + "' (already used in row " + firstUse.getOrDefault(id, rowIndex) + ")");
             } else {
-                Integer firstRow = explicitIds.putIfAbsent(id, rowIndex);
-                if (firstRow != null) {
-                    throw CsvFormatException.atRow(rowIndex,
-                            "duplicate task id '" + id + "' (already used in row " + firstRow + ")");
-                }
-                ids.add(id);
+                taken.add(id);
+                firstUse.put(id, rowIndex);
             }
             tasks.add(new Task(id, values));
             ordinal++;

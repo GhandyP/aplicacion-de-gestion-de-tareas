@@ -65,8 +65,18 @@ public final class SourceCsvFinder {
     /** Scans {@code root} for candidate exports, reporting anything that could not be read. */
     public static Discovery discover(Path root) {
         Objects.requireNonNull(root, "root");
-        if (!Files.isDirectory(root)) {
+        if (!Files.exists(root)) {
+            // Nothing configured yet is a normal state, not a problem to report.
             return new Discovery(Optional.empty(), List.of());
+        }
+        if (!Files.isDirectory(root)) {
+            return new Discovery(Optional.empty(),
+                    List.of("The configured source root is not a directory: " + root));
+        }
+        if (!Files.isReadable(root)) {
+            // Answering "nothing found" here would describe an unreadable vault as an empty one.
+            return new Discovery(Optional.empty(),
+                    List.of("The configured source root cannot be read: " + root));
         }
 
         List<Candidate> candidates = new ArrayList<>();

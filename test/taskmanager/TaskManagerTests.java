@@ -81,6 +81,10 @@ public final class TaskManagerTests {
                 TaskManagerTests::testMarkdownDashboardKeepsTasksAndMetadata);
         runTest("the table model projects the daily columns",
                 TaskManagerTests::testTableModelProjectsTheDailyColumns);
+        runTest("a generated id cannot collide with an explicit id",
+                TaskManagerTests::testGeneratedIdCannotCollideWithAnExplicitId);
+        runTest("an unreadable source root is reported",
+                TaskManagerTests::testUnreadableSourceRootIsReported);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -776,6 +780,57 @@ public final class TaskManagerTests {
 
         model.setTasks(List.of());
         check(model.getRowCount() == 0 && model.getTaskAt(0) == null, "clearing the model empties it");
+    }
+
+    private static void testGeneratedIdCannotCollideWithAnExplicitId() throws IOException {
+        Path localFile = Files.createTempFile("task-id-collision", ".csv");
+        try {
+            List<String> legacy = new ArrayList<>(fieldRow(Task.FIELD_COUNT));
+            legacy.add(0, "");
+            String generated = Task.generatedId(legacy.subList(1, legacy.size()), 1);
+            List<String> claimsTheSameId = new ArrayList<>(fieldRow(Task.FIELD_COUNT));
+            claimsTheSameId.add(0, generated);
+
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(TaskRepository.LOCAL_HEADERS);
+            rows.add(legacy);
+            rows.add(claimsTheSameId);
+            writeRows(localFile, rows);
+
+            try {
+                new TaskRepository(localFile);
+                check(false, "an id that a generated row already took must be reported, otherwise two"
+                        + " tasks share an id and every lookup by id can return the wrong task");
+            } catch (CsvFormatException expected) {
+                check(expected.getMessage().contains(generated),
+                        "the failure names the colliding id, got: " + expected.getMessage());
+            }
+        } finally {
+            Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static void testUnreadableSourceRootIsReported() throws IOException {
+        Path root = Files.createTempDirectory("task-root-unreadable");
+        try {
+            Files.setPosixFilePermissions(root, Set.of());
+            if (Files.isReadable(root)) {
+                System.out.println("SKIPPED unreadable root: permissions not enforced for this user");
+                return;
+            }
+
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(root);
+            check(discovery.selected().isEmpty(), "nothing can be selected from an unreadable root");
+            check(discovery.hasProblems(),
+                    "a root that exists but cannot be read must be reported, because answering"
+                            + " \"nothing found\" tells the user their vault has no exports when it may be"
+                            + " full of them");
+            check(discovery.problems().stream().anyMatch(problem -> problem.contains("read")),
+                    "the report says the root could not be read, got: " + discovery.problems());
+        } finally {
+            Files.setPosixFilePermissions(root, PosixFilePermissions.fromString("rwx------"));
+            deleteTree(root);
+        }
     }
 
     private static List<String> ids(List<Task> tasks) {
