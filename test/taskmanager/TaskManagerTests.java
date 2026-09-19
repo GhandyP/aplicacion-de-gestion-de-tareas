@@ -60,6 +60,9 @@ public final class TaskManagerTests {
         runTest("postpone starts from today when the task has no date",
                 TaskManagerTests::testPostponeUsesTodayWhenTheTaskHasNoDate);
         runTest("postpone rejects negative days", TaskManagerTests::testPostponeRejectsNegativeDays);
+        runTest("export directory preparation succeeds", TaskManagerTests::testExportDirectoryPreparationSucceeds);
+        runTest("export directory preparation reports failure",
+                TaskManagerTests::testExportDirectoryPreparationReportsFailure);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -547,6 +550,40 @@ public final class TaskManagerTests {
                     "a refused postponement must leave the stored date untouched");
         } finally {
             Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static void testExportDirectoryPreparationSucceeds() throws IOException {
+        Path appDirectory = Files.createTempDirectory("task-export-ok");
+        try {
+            Exports.Prepared prepared = Exports.prepareDefaultDirectory(appDirectory);
+            check(prepared.problem().isEmpty(), "a writable application directory reports no problem");
+            check(prepared.directory().equals(appDirectory.resolve("exports")),
+                    "the default export directory lives under the application directory");
+            check(Files.isDirectory(prepared.directory()), "the default export directory is created");
+        } finally {
+            deleteTree(appDirectory);
+        }
+    }
+
+    private static void testExportDirectoryPreparationReportsFailure() throws IOException {
+        Path appDirectory = Files.createTempDirectory("task-export-blocked");
+        try {
+            Path blocked = appDirectory.resolve("exports");
+            Files.writeString(blocked, "a plain file where the export folder should be",
+                    StandardCharsets.UTF_8);
+
+            Exports.Prepared prepared = Exports.prepareDefaultDirectory(appDirectory);
+            check(prepared.problem().isPresent(),
+                    "a folder that cannot be created must be reported instead of swallowed, because the"
+                            + " file chooser then opens on a location that does not exist and the user is"
+                            + " never told why");
+            String message = prepared.problem().orElseThrow();
+            check(message.contains("exports"), "the report names the folder, got: " + message);
+            check(prepared.directory().equals(blocked),
+                    "the requested directory is still returned so an export can fall back elsewhere");
+        } finally {
+            deleteTree(appDirectory);
         }
     }
 

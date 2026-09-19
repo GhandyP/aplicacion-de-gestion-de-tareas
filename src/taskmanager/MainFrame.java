@@ -22,7 +22,6 @@ import java.awt.GridLayout;
 import java.awt.Window;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -415,13 +414,13 @@ public final class MainFrame extends JFrame {
     }
 
     private JFileChooser exportChooser(String defaultName) {
-        Path exportDirectory = appDirectory.resolve("exports");
-        try {
-            Files.createDirectories(exportDirectory);
-        } catch (IOException ignored) {
-            // JFileChooser can still select another directory.
-        }
+        Exports.Prepared prepared = Exports.prepareDefaultDirectory(appDirectory);
+        prepared.problem().ifPresent(this::setStatus);
+        Path exportDirectory = prepared.directory();
         JFileChooser chooser = new JFileChooser(exportDirectory.toFile());
+        chooser.setDialogTitle(prepared.hasProblem()
+                ? "Choose where to export (the default folder is unavailable)"
+                : "Choose where to export");
         chooser.setSelectedFile(new File(exportDirectory.toFile(), defaultName));
         return chooser;
     }
