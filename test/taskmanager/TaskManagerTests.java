@@ -10,6 +10,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +55,11 @@ public final class TaskManagerTests {
                 TaskManagerTests::testImportBacksUpThePreviousLocalFile);
         runTest("import without previous data creates no backup",
                 TaskManagerTests::testImportWithoutPreviousDataCreatesNoBackup);
+        runTest("postpone rejects an unparseable date",
+                TaskManagerTests::testPostponeRejectsAnUnparseableDate);
+        runTest("postpone starts from today when the task has no date",
+                TaskManagerTests::testPostponeUsesTodayWhenTheTaskHasNoDate);
+        runTest("postpone rejects negative days", TaskManagerTests::testPostponeRejectsNegativeDays);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -490,6 +496,57 @@ public final class TaskManagerTests {
     private static List<Path> listBySuffix(Path directory, String suffix) throws IOException {
         try (var paths = Files.list(directory)) {
             return paths.filter(path -> path.getFileName().toString().endsWith(suffix)).sorted().toList();
+        }
+    }
+
+    private static void testPostponeRejectsAnUnparseableDate() throws IOException {
+        Path localFile = Files.createTempFile("task-postpone-invalid", ".csv");
+        try {
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("7", "Bad date", "Work", "sometime next week", "No", "High", "", "Planning"));
+
+            Clock fixed = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC);
+            try {
+                repository.postponeDueDate("7", 3, fixed);
+                check(false, "postponing an unparseable date must fail loudly instead of silently"
+                        + " publishing today plus the shift as if it were the task's own date");
+            } catch (IllegalArgumentException expected) {
+                check(expected.getMessage().contains("sometime next week"),
+                        "the failure names the offending value, got: " + expected.getMessage());
+            }
+            check(repository.findById("7").orElseThrow().dueDate().equals("sometime next week"),
+                    "a refused postponement must leave the stored date untouched");
+        } finally {
+            Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static void testPostponeUsesTodayWhenTheTaskHasNoDate() {
+        Clock fixed = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC);
+        String postponed = TaskDates.postpone("", 3, fixed);
+        check(TaskDates.parse(postponed).orElseThrow().equals(LocalDate.of(2026, 9, 12)),
+                "a blank due date postpones from today, which is a convenience rather than a silent"
+                        + " repair, so it must keep working; got " + postponed);
+    }
+
+    private static void testPostponeRejectsNegativeDays() throws IOException {
+        Path localFile = Files.createTempFile("task-postpone-negative", ".csv");
+        try {
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("8", "Future", "Work", "2026-09-20", "No", "High", "", "Planning"));
+
+            Clock fixed = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC);
+            try {
+                repository.postponeDueDate("8", -1, fixed);
+                check(false, "a negative postponement must be refused");
+            } catch (IllegalArgumentException expected) {
+                check(expected.getMessage().contains("negative"),
+                        "the failure explains the rule, got: " + expected.getMessage());
+            }
+            check(repository.findById("8").orElseThrow().dueDate().equals("2026-09-20"),
+                    "a refused postponement must leave the stored date untouched");
+        } finally {
+            Files.deleteIfExists(localFile);
         }
     }
 
