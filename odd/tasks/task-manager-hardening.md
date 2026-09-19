@@ -94,7 +94,7 @@ T10 was not in the original plan. It exists because fixing T8 uncovered two find
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 | T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
 | T7 `09d44a0` + docs (tree `cb131460`) | `review-97ffc9dc88d33a5f` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the extraction** |
-| T10 `265cd2a` + docs (tree `f0631ddc`) | `review-511720b9e63cc94b` | high | risk, resilience, readability, reliability | approved, authority burned; **four findings, three on recently written code** |
+| T11 `f1ae113` + docs (tree `28df5b54`) | `review-f8b6230a594aaf53` | high | risk, resilience, readability, reliability | approved, authority burned; the drift is gone, six new findings all in `SourceCsvFinder` diagnostics |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -340,6 +340,29 @@ Every id now goes through one set of taken ids plus the row that first used it. 
 - Commit `a016615`, README rewritten with 91 added and 12 removed lines. Doc-only, so no review: verified with `git diff --stat` that no file under `src/` or `test/` changed.
 - The README had drifted into being false, which is its own kind of defect: it claimed OpenJDK 25, listed four tests, and described the pre-hardening application. It now documents the single launcher and why `run.sh` was removed (the `R4-removed-launcher` finding that had been carried since T2), the two environment variables and their defaults, atomic saves and the owner-only mode, when backups are taken and how to restore one, the shape of a malformed-CSV message, and how discovery distinguishes a missing root from an unreadable one.
 - Both documented commands were run exactly as written before committing: the environment-variable smoke example and the test runner.
+
+## The eleventh review, and the stopping rule it justifies
+
+The review confirmed the memory drift is gone. It also produced six findings, five of them in `SourceCsvFinder` diagnostics, which exposed that the T10 fix was incomplete: `Files.exists` answers false when the path cannot be inspected at all, so an unreadable parent still takes the silent route. That is a genuine leftover of the same silent-failure class the whole program targets.
+
+But the more useful result is the shape of the list. Across eleven reviews:
+
+| Review | What the findings were about |
+|---|---|
+| 1-8 | the same five issues: atomicity, backups, header handling, dead code, CSV positions |
+| 9 | an id collision and a silent unreadable root |
+| 10 | memory drift, a conditional atomicity claim, a check order |
+| 11 | message precision in one class, plus the same fallback claim |
+
+Nothing in the last three rounds affects what is written to disk or what is read from it. Every finding is about how a diagnostic reads, or about a guarantee being stated more precisely. That is convergence in kind, not in count.
+
+### The stopping rule this justifies
+
+"Zero findings" is not an attainable stopping condition for a review loop: each round fixes what was flagged and the next round finds the adjacent thing, which is the loop working. The honest stopping rule is a threshold:
+
+> Stop when every remaining finding concerns how something is reported or worded, and none concerns data that is written, read, or silently lost.
+
+The sixth review's list already fails that test (it contains the silent root), so one more small fix is justified. After that, the rule applies for real, and the program closes on it rather than on a fiction of emptiness.
 
 ## T11 evidence
 
