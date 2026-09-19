@@ -63,6 +63,14 @@ public final class TaskManagerTests {
         runTest("export directory preparation succeeds", TaskManagerTests::testExportDirectoryPreparationSucceeds);
         runTest("export directory preparation reports failure",
                 TaskManagerTests::testExportDirectoryPreparationReportsFailure);
+        runTest("area tokens use one split rule", TaskManagerTests::testAreaTokensUseOneSplitRule);
+        runTest("area facets are case-insensitive and sorted",
+                TaskManagerTests::testAreaFacetsAreCaseInsensitiveAndSorted);
+        runTest("hasArea keeps its existing rule", TaskManagerTests::testTaskHasAreaKeepsItsExistingRule);
+        runTest("task order ranks completion, then urgency, then importance",
+                TaskManagerTests::testTaskOrderRanksCompletionThenUrgencyThenImportance);
+        runTest("task order places unreadable dates last and breaks ties by name",
+                TaskManagerTests::testTaskOrderPlacesUnreadableDatesLastAndBreaksTiesByName);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -585,6 +593,67 @@ public final class TaskManagerTests {
         } finally {
             deleteTree(appDirectory);
         }
+    }
+
+    private static void testAreaTokensUseOneSplitRule() {
+        List<String> tokens = AreaTokens.of("Work, Home; Errands|Planning\nIdeas");
+        check(tokens.equals(List.of("Work", "Home", "Errands", "Planning", "Ideas")),
+                "every documented separator splits the area field, got " + tokens);
+        check(AreaTokens.of(" , ;; ").isEmpty(), "blank tokens are dropped instead of becoming facets");
+        check(AreaTokens.of(null).isEmpty(), "a missing area field has no tokens");
+        check(AreaTokens.of("  Home  ").equals(List.of("Home")), "tokens are trimmed");
+    }
+
+    private static void testAreaFacetsAreCaseInsensitiveAndSorted() {
+        List<Task> tasks = List.of(
+                task("1", "A", "", "", "No", "", "", "Work, Home"),
+                task("2", "B", "", "", "No", "", "", "work, Errands"),
+                task("3", "C", "", "", "No", "", "", ""));
+        List<String> facets = AreaTokens.across(tasks);
+        check(facets.equals(List.of("Errands", "Home", "Work")),
+                "facets are deduplicated case-insensitively and sorted, got " + facets);
+    }
+
+    private static void testTaskHasAreaKeepsItsExistingRule() {
+        Task task = task("1", "A", "", "", "No", "", "", "Work, Home");
+        check(task.hasArea("home"), "an area token matches case-insensitively");
+        check(task.hasArea(""), "an empty request matches every task");
+        check(!task.hasArea("Hom"), "a partial token must not match, or the filter silently widens");
+        check(!task.hasArea("Office"), "an unknown area does not match");
+    }
+
+    private static void testTaskOrderRanksCompletionThenUrgencyThenImportance() {
+        Task completed = task("1", "done", "", "2026-01-01", "Yes", "muy importante", "muy urgente", "");
+        Task low = task("2", "low", "", "2026-01-01", "No", "no importante", "poca urgencia", "");
+        Task high = task("3", "high", "", "2026-01-01", "No", "muy importante", "muy urgente", "");
+
+        List<Task> sorted = new ArrayList<>(List.of(completed, low, high));
+        sorted.sort(TaskOrder.DEFAULT);
+        check(ids(sorted).equals(List.of("3", "2", "1")),
+                "active work first, most urgent before least, completed last; got " + ids(sorted));
+    }
+
+    private static void testTaskOrderPlacesUnreadableDatesLastAndBreaksTiesByName() {
+        Task blank = task("1", "Zebra", "", "", "No", "", "", "");
+        Task unreadable = task("2", "Alpha", "", "sometime", "No", "", "", "");
+        Task dated = task("3", "Beta", "", "2026-01-01", "No", "", "", "");
+
+        List<Task> sorted = new ArrayList<>(List.of(blank, unreadable, dated));
+        sorted.sort(TaskOrder.DEFAULT);
+        check(ids(sorted).equals(List.of("3", "2", "1")),
+                "a real date sorts first and both unreadable dates fall to the end"
+                        + " in name order; got " + ids(sorted));
+
+        Task alpha = task("4", "alpha", "", "2026-01-01", "No", "", "", "");
+        Task beta = task("5", "Beta", "", "2026-01-01", "No", "", "", "");
+        List<Task> ties = new ArrayList<>(List.of(beta, alpha));
+        ties.sort(TaskOrder.DEFAULT);
+        check(ids(ties).equals(List.of("4", "5")),
+                "equal keys break by name case-insensitively, got " + ids(ties));
+    }
+
+    private static List<String> ids(List<Task> tasks) {
+        return tasks.stream().map(Task::id).toList();
     }
 
     private static List<String> fieldRow(int fieldCount) {

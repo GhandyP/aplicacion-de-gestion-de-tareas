@@ -191,16 +191,7 @@ public final class Task {
     }
 
     public boolean hasArea(String requestedArea) {
-        String requested = requestedArea == null ? "" : requestedArea.trim();
-        if (requested.isEmpty()) {
-            return true;
-        }
-        for (String token : areas().split("[,;|\\n]")) {
-            if (token.trim().equalsIgnoreCase(requested)) {
-                return true;
-            }
-        }
-        return areas().trim().equalsIgnoreCase(requested);
+        return AreaTokens.contains(areas(), requestedArea);
     }
 
     public String searchableText() {
