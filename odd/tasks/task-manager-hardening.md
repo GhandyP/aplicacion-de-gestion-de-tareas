@@ -46,7 +46,7 @@ of fragile persistence.
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | done | `795abaa` |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | done (part of the T7+T8 candidate) | `09d44a0` |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | done | `818f866` + `95181dd` |
-| T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
+| T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | done | `a016615` |
 | T10 | Close the two findings the ninth review surfaced | `R3-generated-explicit-id-collision`, `R4-silent-unreadable-root` | done | `265cd2a` |
 
 T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3.
@@ -332,6 +332,12 @@ Every id now goes through one set of taken ids plus the row that first used it. 
 ### The unreadable root
 
 `discover` answered "nothing found" for three different situations: no root configured, a root that is not a directory, and a root that exists but cannot be read. Only the first is a normal state that deserves silence. The three are now distinct outcomes, and the message says which one happened. Note that `Files.isDirectory` reports false on a permission error, so a separate readability check is needed after it to produce the right message.
+
+## T9 evidence
+
+- Commit `a016615`, README rewritten with 91 added and 12 removed lines. Doc-only, so no review: verified with `git diff --stat` that no file under `src/` or `test/` changed.
+- The README had drifted into being false, which is its own kind of defect: it claimed OpenJDK 25, listed four tests, and described the pre-hardening application. It now documents the single launcher and why `run.sh` was removed (the `R4-removed-launcher` finding that had been carried since T2), the two environment variables and their defaults, atomic saves and the owner-only mode, when backups are taken and how to restore one, the shape of a malformed-CSV message, and how discovery distinguishes a missing root from an unreadable one.
+- Both documented commands were run exactly as written before committing: the environment-variable smoke example and the test runner.
 
 ## Known fragilities from reconnaissance
 
