@@ -143,8 +143,9 @@ public final class TaskRepository {
      *
      * <p>The list goes to a temporary file beside the target and is then renamed over it, so an
      * interrupted save cannot leave a truncated or half-written task list behind. That rename is
-     * atomic only where the filesystem supports it; where it does not, the write falls back to a
-     * whole-file replace, which is not atomic but is still never a truncating write.</p>
+     * atomic only where the filesystem supports it. Where it does not, the current file is copied
+     * aside before the replace, because that replace may be implemented as a copy that an
+     * interruption would leave half-written.</p>
      */
     public synchronized void save() throws IOException {
         writeTasks(tasks);
@@ -186,8 +187,11 @@ public final class TaskRepository {
             try {
                 Files.move(temporary, localFile, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException error) {
-                // Some filesystems cannot rename atomically. Replacing in place is still a whole-file
-                // replacement of a complete temporary file, which is far better than truncating first.
+                // This filesystem cannot rename atomically, so the replace below may be implemented as
+                // a copy followed by a delete, and an interruption during that copy would leave the
+                // task list half-written. The current file is therefore copied aside first, so the
+                // previous tasks stay recoverable from a backup.
+                backupExistingLocalFile();
                 Files.move(temporary, localFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
