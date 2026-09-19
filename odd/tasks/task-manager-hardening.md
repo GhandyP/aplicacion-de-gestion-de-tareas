@@ -433,6 +433,21 @@ The stopping rule sorts findings into "about data" and "about wording". I sorted
 
 Sorting by consequence rather than by appearance is the correction, and it is the reason this last item was worth reopening.
 
+## The thirteenth review, and a finding that did not reproduce
+
+Four findings. Two are the `ATOMIC_MOVE` fallback seen again by two lenses, which the previous round already mitigated by copying the file aside first. Two are real and both mine:
+
+1. `R1-backup-permissions` (`TaskRepository.java:207`) — a backup must not be more readable than the file it copies.
+2. `R2-status-contradiction` (`task-manager-hardening.md:3`) — the document still said "in progress" while recording its own close.
+
+The status line is fixed. For the permissions, **the finding did not reproduce, and that is worth stating**: the test I wrote passes before and after the change.
+
+The investigation: this environment runs `umask 0002`, so a file created the ordinary way lands at `0664`. A backup copies to `0600` anyway, because `Files.copy` passes the source's mode to `open`, and the source is `0600`. So the copy is already private here.
+
+That does not make the finding wrong. The inheritance is an implementation detail of `Files.copy` rather than a documented guarantee — the documented promise for `COPY_ATTRIBUTES` is only that *some* attributes are copied, and permissions are not named. Relying on undocumented behaviour for a privacy property is fragile, so the mode is now aligned explicitly.
+
+**The test is labelled a guard, not evidence.** It passes before and after, so it does not prove the fix; it protects the property from a future change. Calling it a red-then-green test would be exactly the kind of overstated coverage this document has been careful to avoid elsewhere.
+
 ## Known fragilities from reconnaissance
 
 1. `MainFrame` is a 437-line god class: window construction, filtering, sorting, persistence actions, dialogs, exports (`MainFrame.java:71-428`).
