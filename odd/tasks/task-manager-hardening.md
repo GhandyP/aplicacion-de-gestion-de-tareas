@@ -86,6 +86,7 @@ of fragile persistence.
 | T3 + T4 + docs (through `177676b`, tree `01f83a17`) | `review-b1178646de5500fd` | high | risk, resilience, readability, reliability | approved, authority burned |
 | Docs `4f250ac` (tree `48dfe85c`) | `review-460f776439bc33c5` | high | risk, resilience, readability, reliability | approved, authority burned; all four reviewers admitted cleanly |
 | Docs `544bb9b` (tree `a14ef425`) | `review-06e2e0c62457f94d` | high | risk, resilience, readability, reliability | approved, authority burned; consent granted on the first attempt |
+| T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -207,6 +208,18 @@ A **blank** due date keeps shifting from today. That is a convenience for a task
 ### Skipped review, declared
 
 Candidate `sha256:def774b2…` (the documentation commit `1e924d7`) was **not** sent to review. Ground: the increment since the previously burned review (`544bb9b`) is one file, `odd/tasks/task-manager-hardening.md`, plus five lines, verified with `git diff --stat`, and `git diff 544bb9b..HEAD -- src/ test/` is empty. My contract allows skipping the preflight for a trivial passive documentation-only edit, independently of any user disposition. The code inside the provider's accumulated range is byte-identical to what was reviewed and burned twice already (targets `1712d0c9` and `92f90641`), with an identical finding set. Recording it here so the skip is auditable and reversible.
+
+### Findings from the sixth review: the new code passed clean
+
+Nine entries, all reducing to the same five known issues already scheduled into T8. What matters is the absence: **not one finding landed on the `TaskDates` change**. The four lenses reviewed the silence-versus-error distinction and the two tests pinning it, and had nothing to say. The accumulated trend is now unambiguous, and the evidence is three reviews deep:
+
+| Review | Increment | New findings | Prompt size |
+|---|---|---|---|
+| fourth | docs only | one (CRLF accounting) | ~88 KB |
+| fifth | docs only | none | ~90 KB |
+| sixth | T5 code + docs | none, and none on the new code | ~98 KB |
+
+Repeated review of unchanged code produces no information and keeps costing four model runs; new code does get real coverage when it is reviewed. That is the argument for fewer, larger candidates rather than per-commit ones.
 
 ## Known fragilities from reconnaissance
 
