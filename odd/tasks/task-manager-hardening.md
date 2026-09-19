@@ -85,6 +85,7 @@ of fragile persistence.
 | Review record `3aea4e4` (doc-only increment) | `review-1bdd65b875ce3f69` (no lineage created) | n/a | n/a | **left unreviewed by explicit user decision** |
 | T3 + T4 + docs (through `177676b`, tree `01f83a17`) | `review-b1178646de5500fd` | high | risk, resilience, readability, reliability | approved, authority burned |
 | Docs `4f250ac` (tree `48dfe85c`) | `review-460f776439bc33c5` | high | risk, resilience, readability, reliability | approved, authority burned; all four reviewers admitted cleanly |
+| Docs `544bb9b` (tree `a14ef425`) | `review-06e2e0c62457f94d` | high | risk, resilience, readability, reliability | approved, authority burned; consent granted on the first attempt |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -180,6 +181,10 @@ Only `replaceAll` backs up (that is the `Refresh / Import` path, the one operati
 | T3 (`5db0cb5`, `b13a147`) | `native-operation-failed`, `lineage_created: false`, `mutation_performed: false`, `next_action: resolve-native-operation-failure` |
 
 The provider itself asks for a native operation failure to be resolved. That is not something a caller can supply: there are no exact native values to provide, and inventing a lineage, actor, or reason for `review reclaim` is explicitly out of bounds. So the candidate stayed unreviewed, and the user was told the gate was broken rather than that the candidate was judged unnecessary. Three candidates have now failed in three different ways (`consent-binding-stale`, `native-status-unavailable`, `native-operation-failed`), all with `lineage_created: false` and no mutation.
+
+## Review cost trend, and why it matters here
+
+The provider projects the **accumulated range** from `3a04c77`, not the increment, so every new candidate re-reviews all previously reviewed code. Four consecutive reviews of this branch cost four model runs each over prompts that grew from ~53 KB to ~90 KB, and the last two reviews returned the same five advisory findings with nothing new. The churn is real and it is structural, not accidental: as long as the branch keeps growing in single-commit steps, each step pays for the whole history. The practical implication is not to skip the gate but to reduce the number of candidates: land the remaining units and let T8 address the accumulated findings, instead of expecting new findings from re-reviewing unchanged code.
 
 ## Known fragilities from reconnaissance
 
