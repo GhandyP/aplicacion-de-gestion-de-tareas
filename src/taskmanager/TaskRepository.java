@@ -80,16 +80,18 @@ public final class TaskRepository {
         if (findById(task.id()).isPresent()) {
             throw new IllegalArgumentException("A task with id already exists: " + task.id());
         }
-        tasks.add(task);
-        save();
+        List<Task> updated = new ArrayList<>(tasks);
+        updated.add(task);
+        persist(updated);
     }
 
     public synchronized void update(Task replacement) throws IOException {
         Objects.requireNonNull(replacement, "replacement");
-        for (int index = 0; index < tasks.size(); index++) {
-            if (tasks.get(index).id().equals(replacement.id())) {
-                tasks.set(index, replacement);
-                save();
+        List<Task> updated = new ArrayList<>(tasks);
+        for (int index = 0; index < updated.size(); index++) {
+            if (updated.get(index).id().equals(replacement.id())) {
+                updated.set(index, replacement);
+                persist(updated);
                 return;
             }
         }
@@ -97,24 +99,22 @@ public final class TaskRepository {
     }
 
     public synchronized boolean delete(String id) throws IOException {
-        boolean removed = tasks.removeIf(task -> task.id().equals(id));
-        if (removed) {
-            save();
+        List<Task> updated = new ArrayList<>(tasks);
+        if (!updated.removeIf(task -> task.id().equals(id))) {
+            return false;
         }
-        return removed;
+        persist(updated);
+        return true;
     }
 
     public synchronized void markCompleted(String id, boolean completed) throws IOException {
-        Task task = requireTask(id);
-        updateWithoutSave(task.withCompleted(completed));
-        save();
+        update(requireTask(id).withCompleted(completed));
     }
 
     public synchronized void postponeDueDate(String id, int days, Clock clock) throws IOException {
         Objects.requireNonNull(clock, "clock");
         Task task = requireTask(id);
-        updateWithoutSave(task.withDueDate(TaskDates.postpone(task.dueDate(), days, clock)));
-        save();
+        update(task.withDueDate(TaskDates.postpone(task.dueDate(), days, clock)));
     }
 
     public synchronized void replaceAll(Collection<Task> replacements) throws IOException {
@@ -133,19 +133,43 @@ public final class TaskRepository {
             normalized.add(candidate);
         }
         backupExistingLocalFile();
-        tasks.clear();
-        tasks.addAll(normalized);
-        save();
+        // Writing first and adopting the list afterwards is what keeps a failed replacement from
+        // leaving the window showing tasks that were never persisted.
+        persist(normalized);
     }
 
+    /**
+     * Writes the list currently in memory.
+     *
+     * <p>The list goes to a temporary file beside the target and is then renamed over it, so an
+     * interrupted save cannot leave a truncated or half-written task list behind. That rename is
+     * atomic only where the filesystem supports it; where it does not, the write falls back to a
+     * whole-file replace, which is not atomic but is still never a truncating write.</p>
+     */
     public synchronized void save() throws IOException {
+        writeTasks(tasks);
+    }
+
+    /**
+     * Writes {@code toWrite} and, only if that succeeded, makes it the list this repository reports.
+     *
+     * <p>Every mutator goes through here. Changing memory before the write would let a failed save
+     * leave the visible list describing work that does not exist on disk.</p>
+     */
+    private void persist(List<Task> toWrite) throws IOException {
+        writeTasks(toWrite);
+        tasks.clear();
+        tasks.addAll(toWrite);
+    }
+
+    private void writeTasks(List<Task> toWrite) throws IOException {
         Path parent = localFile.getParent();
         if (parent != null) {
             Files.createDirectories(parent);
         }
         List<List<String>> rows = new ArrayList<>();
         rows.add(LOCAL_HEADERS);
-        for (Task task : tasks) {
+        for (Task task : toWrite) {
             ArrayList<String> row = new ArrayList<>(Task.FIELD_COUNT + 1);
             row.add(task.id());
             row.addAll(task.values());
@@ -296,16 +320,6 @@ public final class TaskRepository {
 
     private synchronized Task requireTask(String id) {
         return findById(id).orElseThrow(() -> new IllegalArgumentException("Unknown task id: " + id));
-    }
-
-    private void updateWithoutSave(Task replacement) {
-        for (int index = 0; index < tasks.size(); index++) {
-            if (tasks.get(index).id().equals(replacement.id())) {
-                tasks.set(index, replacement);
-                return;
-            }
-        }
-        throw new IllegalArgumentException("Unknown task id: " + replacement.id());
     }
 
     private static List<String> normalizeSourceValues(List<String> row) {

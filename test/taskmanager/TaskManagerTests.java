@@ -85,6 +85,8 @@ public final class TaskManagerTests {
                 TaskManagerTests::testGeneratedIdCannotCollideWithAnExplicitId);
         runTest("an unreadable source root is reported",
                 TaskManagerTests::testUnreadableSourceRootIsReported);
+        runTest("a failed save leaves memory matching the file",
+                TaskManagerTests::testAFailedSaveLeavesMemoryMatchingTheFile);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -830,6 +832,66 @@ public final class TaskManagerTests {
         } finally {
             Files.setPosixFilePermissions(root, PosixFilePermissions.fromString("rwx------"));
             deleteTree(root);
+        }
+    }
+
+    private static void testAFailedSaveLeavesMemoryMatchingTheFile() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-save-failure");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("1", "Kept", "Work", "", "No", "", "", ""));
+
+            Path source = dataDirectory.resolve("vault_all.csv");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(Task.SOURCE_HEADERS);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+            List<Task> imported = TaskRepository.importFrom(source);
+
+            makeUnwritable(dataDirectory);
+            if (Files.isWritable(dataDirectory)) {
+                System.out.println("SKIPPED save failure: directory permissions not enforced for this user");
+                return;
+            }
+
+            try {
+                repository.replaceAll(imported);
+                check(false, "a save that cannot write must throw instead of reporting success");
+            } catch (IOException expected) {
+                // The data directory is read-only, which is the point of this test.
+            }
+            makeWritable(dataDirectory);
+            check(repository.size() == 1 && repository.findById("1").isPresent(),
+                    "after a failed replacement the repository must still describe the file on disk,"
+                            + " not the list it failed to save; got " + ids(repository.tasks()));
+
+            makeUnwritable(dataDirectory);
+            try {
+                repository.add(task("2", "Never saved", "Work", "", "No", "", "", ""));
+                check(false, "a save that cannot write must throw");
+            } catch (IOException expected) {
+                // Expected for the same reason.
+            }
+            makeWritable(dataDirectory);
+            check(repository.findById("2").isEmpty(),
+                    "a task whose save failed must not appear in memory either, because the window"
+                            + " would then show work that was never persisted; got " + ids(repository.tasks()));
+        } finally {
+            makeWritable(dataDirectory);
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static void makeUnwritable(Path directory) throws IOException {
+        Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("r-x------"));
+    }
+
+    private static void makeWritable(Path directory) {
+        try {
+            Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
+        } catch (IOException ignored) {
+            // Best effort: only used to clean up after a test.
         }
     }
 

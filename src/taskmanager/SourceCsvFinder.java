@@ -70,8 +70,10 @@ public final class SourceCsvFinder {
             return new Discovery(Optional.empty(), List.of());
         }
         if (!Files.isDirectory(root)) {
+            // Files.isDirectory also answers false when the path cannot be inspected at all, so this
+            // message must not claim to know which of the two happened.
             return new Discovery(Optional.empty(),
-                    List.of("The configured source root is not a directory: " + root));
+                    List.of("The configured source root is not an inspectable directory: " + root));
         }
         if (!Files.isReadable(root)) {
             // Answering "nothing found" here would describe an unreadable vault as an empty one.
