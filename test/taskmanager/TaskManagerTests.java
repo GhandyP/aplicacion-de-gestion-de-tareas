@@ -77,6 +77,10 @@ public final class TaskManagerTests {
                 TaskManagerTests::testSourceHeaderIsRecognisedEvenWhenItsFirstNameDiffers);
         runTest("a CRLF inside a quoted field advances the line",
                 TaskManagerTests::testCrlfInsideAQuotedFieldAdvancesTheLine);
+        runTest("the markdown dashboard keeps every task and its metadata",
+                TaskManagerTests::testMarkdownDashboardKeepsTasksAndMetadata);
+        runTest("the table model projects the daily columns",
+                TaskManagerTests::testTableModelProjectsTheDailyColumns);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -717,6 +721,61 @@ public final class TaskManagerTests {
             check(expected.column() == 6,
                     "the column after the CRLF must still be right, got " + expected.column());
         }
+    }
+
+    private static void testMarkdownDashboardKeepsTasksAndMetadata() throws IOException {
+        Path output = Files.createTempFile("task-dashboard", ".md");
+        try {
+            Task active = task("a1", "Write report", "Work", "2026-09-20", "No",
+                    "High", "Muy urgente", "Planning");
+            Task completed = task("b2", "Buy milk", "Home", "", "Yes", "", "", "");
+            MarkdownExporter.write(output, List.of(active, completed));
+
+            String markdown = Files.readString(output, StandardCharsets.UTF_8);
+            check(markdown.contains("- Total: 2") && markdown.contains("- Active: 1")
+                            && markdown.contains("- Completed: 1"),
+                    "the summary counts active and completed separately, got:\n" + markdown);
+            check(markdown.contains("- [ ] Write report") && markdown.contains("- [x] Buy milk"),
+                    "an active task is unchecked and a completed one is checked");
+            check(markdown.contains("due 2026-09-20"), "the due date travels with its task");
+            check(markdown.contains("importance: High") && markdown.contains("urgency: Muy urgente")
+                            && markdown.contains("areas: Planning"),
+                    "non-blank metadata is published next to the task");
+            check(markdown.contains("<!-- task-id:a1 -->"),
+                    "the task id survives, so a dashboard line can be traced back to a task");
+            check(!markdown.contains("_None_"), "both sections have content");
+
+            MarkdownExporter.write(output, List.of());
+            String empty = Files.readString(output, StandardCharsets.UTF_8);
+            check(empty.contains("- Total: 0"), "an empty dashboard reports zero");
+            check(empty.split("_None_", -1).length - 1 == 2, "both empty sections say so, got:\n" + empty);
+        } finally {
+            Files.deleteIfExists(output);
+        }
+    }
+
+    private static void testTableModelProjectsTheDailyColumns() {
+        TaskTableModel model = new TaskTableModel();
+        Task active = task("1", "Write report", "Work", "2026-09-20", "No",
+                "High", "Muy urgente", "Planning");
+        Task completed = task("2", "Buy milk", "Home", "", "Yes", "", "", "");
+        model.setTasks(List.of(active, completed));
+
+        check(model.getRowCount() == 2, "both tasks are shown");
+        check(model.getColumnCount() == 8, "the table shows the eight daily columns");
+        check(model.getColumnName(0).equals("Name") && model.getColumnName(7).equals("Areas"),
+                "columns keep their order, got " + model.getColumnName(0) + " ... "
+                        + model.getColumnName(7));
+        check(model.getValueAt(0, 0).equals("Write report"), "the name column reads the task name");
+        check(model.getValueAt(0, 1).equals("Active") && model.getValueAt(1, 1).equals("Completed"),
+                "the status column translates the completion flag instead of showing the raw field");
+        check(model.getValueAt(0, 5).equals("Work"), "the context column reads the context field");
+        check(model.getTaskAt(1).equals(completed),
+                "a row maps back to its task, which is what every action button depends on");
+        check(model.getTaskAt(9) == null, "an out-of-range row has no task instead of throwing");
+
+        model.setTasks(List.of());
+        check(model.getRowCount() == 0 && model.getTaskAt(0) == null, "clearing the model empties it");
     }
 
     private static List<String> ids(List<Task> tasks) {
