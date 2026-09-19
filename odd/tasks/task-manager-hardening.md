@@ -92,7 +92,7 @@ T10 was not in the original plan. It exists because fixing T8 uncovered two find
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 | T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
 | T7 `09d44a0` + docs (tree `cb131460`) | `review-97ffc9dc88d33a5f` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the extraction** |
-| T8 `818f866` + `95181dd` + docs (tree `aa52e4f1`) | `review-fe70daf3611f5f9a` | high | risk, resilience, readability, reliability | approved, authority burned; **the finding list finally changed** |
+| T10 `265cd2a` + docs (tree `f0631ddc`) | `review-511720b9e63cc94b` | high | risk, resilience, readability, reliability | approved, authority burned; **four findings, three on recently written code** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -302,6 +302,21 @@ The ninth review replaced the recycled list with two findings that are specific 
 2. `R4-silent-unreadable-root` (`SourceCsvFinder.java:64-66`) — `discover` returns "nothing found" both for a root that is genuinely absent and for a root that exists but cannot be read, so an unreadable vault is reported as an empty vault. The same class of silent failure T2 went after, one level up.
 
 Both are code changes, so they get a small unit (T10) rather than being folded into the documentation unit. `R4-removed-launcher` remains a documentation item in T9.
+
+## The tenth review, and what it means for convergence
+
+Four findings, three of them about code written in the last two units:
+
+1. `R4-replace-failure-memory-drift` (`TaskRepository.java:131-134`) — **the serious one.** `replaceAll` backs up, mutates the in-memory list, and only then saves. If the save throws, memory holds the imported list while the file still holds the old one, so the window shows tasks that were never persisted. That is a real defect in the design T4 introduced, and it is the kind of thing only a fresh reader notices.
+2. `R4-nonatomic-fallback` (`TaskRepository.java:157-166`) — the `ATOMIC_MOVE` fallback shipped in T8 means the atomicity guarantee is conditional. True as written, and worth stating in the code rather than only in a commit message.
+3. `R3-001` (`TaskRepository.java:158`) — the same region seen by another lens.
+4. `R2-unreadable-root-check-order` (`SourceCsvFinder.java:59-61`) — the check order from T10. `Files.isDirectory` answers false on some permission errors, so the "not a directory" message can be wrong when the truth is "cannot read".
+
+### The convergence question, stated plainly
+
+Two consecutive reviews have produced findings on code written for this feature (T3's id collision, then these). That is the loop working, not failing: a review that finds nothing on new code is rare, and each fix is genuinely smaller and more specific than the last. But it means this program does not converge to zero findings in one pass, and every further round costs four model runs over a prompt that is now ~142 KB.
+
+The honest options are to keep iterating while the findings stay real and small, or to stop with these four recorded as known and accepted debt. That is a user decision, not an agent one, and it is recorded here as open.
 
 ## T10 evidence
 
