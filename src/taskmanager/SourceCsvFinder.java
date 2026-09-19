@@ -3,6 +3,7 @@ package taskmanager;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -65,15 +66,21 @@ public final class SourceCsvFinder {
     /** Scans {@code root} for candidate exports, reporting anything that could not be read. */
     public static Discovery discover(Path root) {
         Objects.requireNonNull(root, "root");
-        if (!Files.exists(root)) {
-            // Nothing configured yet is a normal state, not a problem to report.
+        BasicFileAttributes attributes;
+        try {
+            // A single stat is the only way to tell three states apart. Files.exists collapses two of
+            // them: it answers false both for a path that is absent and for one that cannot be
+            // inspected at all, and the second must never masquerade as "nothing configured yet".
+            attributes = Files.readAttributes(root, BasicFileAttributes.class);
+        } catch (NoSuchFileException error) {
             return new Discovery(Optional.empty(), List.of());
-        }
-        if (!Files.isDirectory(root)) {
-            // Files.isDirectory also answers false when the path cannot be inspected at all, so this
-            // message must not claim to know which of the two happened.
+        } catch (IOException error) {
             return new Discovery(Optional.empty(),
-                    List.of("The configured source root is not an inspectable directory: " + root));
+                    List.of("The configured source root cannot be inspected: " + root + " (" + error + ")"));
+        }
+        if (!attributes.isDirectory()) {
+            return new Discovery(Optional.empty(),
+                    List.of("The configured source root is not a directory: " + root));
         }
         if (!Files.isReadable(root)) {
             // Answering "nothing found" here would describe an unreadable vault as an empty one.

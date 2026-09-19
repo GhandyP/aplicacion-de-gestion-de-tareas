@@ -87,6 +87,8 @@ public final class TaskManagerTests {
                 TaskManagerTests::testUnreadableSourceRootIsReported);
         runTest("a failed save leaves memory matching the file",
                 TaskManagerTests::testAFailedSaveLeavesMemoryMatchingTheFile);
+        runTest("an uninspectable source root is reported",
+                TaskManagerTests::testUninspectableSourceRootIsReported);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -880,6 +882,28 @@ public final class TaskManagerTests {
         } finally {
             makeWritable(dataDirectory);
             deleteTree(dataDirectory);
+        }
+    }
+
+    private static void testUninspectableSourceRootIsReported() throws IOException {
+        Path parent = Files.createTempDirectory("task-root-parent");
+        Path root = Files.createDirectory(parent.resolve("vault"));
+        try {
+            Files.setPosixFilePermissions(parent, PosixFilePermissions.fromString("---------"));
+            if (Files.exists(root)) {
+                System.out.println("SKIPPED uninspectable root: permissions not enforced for this user");
+                return;
+            }
+
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(root);
+            check(discovery.selected().isEmpty(), "nothing can be selected from an uninspectable root");
+            check(discovery.hasProblems(),
+                    "a root that cannot be inspected at all must be reported, because answering"
+                            + " \"nothing found\" is indistinguishable from a vault that is genuinely"
+                            + " empty and not configured yet");
+        } finally {
+            Files.setPosixFilePermissions(parent, PosixFilePermissions.fromString("rwx------"));
+            deleteTree(parent);
         }
     }
 
