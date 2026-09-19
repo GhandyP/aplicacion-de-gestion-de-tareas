@@ -1,6 +1,6 @@
 # Feature: task-manager-hardening
 
-Status: in progress
+Status: closed. Every work unit in the table below is done, and the review history below is the record of how it was checked. The stopping rule that closed it, and the one finding it tolerates, are both recorded further down.
 Branch: `feat/task-manager-hardening`
 Created: 2026-09-17
 

@@ -218,6 +218,14 @@ public final class TaskRepository {
             backup = localFile.resolveSibling(name + "-" + suffix++ + BACKUP_SUFFIX);
         }
         Files.copy(localFile, backup);
+        try {
+            // The copy happens to inherit the source's mode on this platform, but that is an
+            // implementation detail rather than a documented guarantee, and this is a privacy
+            // property: a backup must never be more readable than the file it copies.
+            Files.setPosixFilePermissions(backup, Files.getPosixFilePermissions(localFile));
+        } catch (UnsupportedOperationException error) {
+            // Not a POSIX filesystem, so there is no permission model to align.
+        }
     }
 
     /** Reads a source export and creates deterministic local task ids without changing the source. */

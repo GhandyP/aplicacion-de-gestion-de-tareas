@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
@@ -89,6 +90,8 @@ public final class TaskManagerTests {
                 TaskManagerTests::testAFailedSaveLeavesMemoryMatchingTheFile);
         runTest("an uninspectable source root is reported",
                 TaskManagerTests::testUninspectableSourceRootIsReported);
+        runTest("a backup is as private as the local file",
+                TaskManagerTests::testBackupsAreAsPrivateAsTheLocalFile);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -904,6 +907,33 @@ public final class TaskManagerTests {
         } finally {
             Files.setPosixFilePermissions(parent, PosixFilePermissions.fromString("rwx------"));
             deleteTree(parent);
+        }
+    }
+
+    private static void testBackupsAreAsPrivateAsTheLocalFile() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-backup-privacy");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("1", "Private work", "Work", "", "No", "", "", ""));
+
+            Path source = dataDirectory.resolve("vault_all.csv");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(Task.SOURCE_HEADERS);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+            repository.replaceAll(TaskRepository.importFrom(source));
+
+            List<Path> backups = listBackups(dataDirectory);
+            check(backups.size() == 1, "one backup is written, got " + backups);
+            Set<PosixFilePermission> local = Files.getPosixFilePermissions(localFile);
+            Set<PosixFilePermission> backup = Files.getPosixFilePermissions(backups.get(0));
+            check(backup.equals(local),
+                    "a backup of private task data must not be more readable than the local file,"
+                            + " because the copy would otherwise expose what the file itself protects;"
+                            + " local=" + local + " backup=" + backup);
+        } finally {
+            deleteTree(dataDirectory);
         }
     }
 
