@@ -44,7 +44,7 @@ of fragile persistence.
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | done | `7501f87` |
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | done | `db361b4` |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | done | `795abaa` |
-| T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
+| T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | done (part of the T7+T8 candidate) | `09d44a0` |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | pending | - |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
 
@@ -241,6 +241,26 @@ The original comment had a point: refusing to export because the default folder 
 ### Skipped review, declared
 
 Candidate `sha256:683fce61…` (documentation commit `3dc9f22`) was not sent to review. Ground: `git diff db361b4..HEAD` is one file, `odd/tasks/task-manager-hardening.md`, plus 36 lines, and the same diff for `src/` and `test/` is empty. Same auditable basis as the previous skip.
+
+## T7 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 27` (was 22), exit 0. Smoke green with no source and after an import.
+- Commit `09d44a0`, 195 added and 63 removed lines. `MainFrame` drops from 437 to 390 lines.
+- Skipped review, declared: candidate `sha256:79c64bc2…` (documentation commit `6fc7e91`) was not sent to review; `git diff e47a6ab..HEAD` is one markdown file plus four lines, and the same diff for `src/` and `test/` is empty.
+
+### What was actually duplicated
+
+The rule for reading the area field lived in two places: `MainFrame.areaValues` split on `[,;|\n]` to build the facet list, and `Task.hasArea` split on the same pattern to answer a filter. Two copies of one rule are a drift waiting to happen, so both now call `AreaTokens`.
+
+`Task.hasArea` kept its behaviour exactly, **including the part that looks redundant**: after comparing token by token it also compares the whole raw field, so a request that repeats the whole field still matches. That branch is unreachable from the facet combo, which only ever offers single tokens, so the honest move was to preserve it and say so rather than silently drop behaviour in a refactor. A test pins it.
+
+### Why the ordering mattered
+
+The comparator and its ranking vocabulary were inside the window class: `muy urgente`, `media`, `poca` for urgency, and `muy importante`, `importante`, `no importante` for importance. Those are domain rules about the export's Spanish wording, and no test could reach them without a display. They now live in `TaskOrder` with the ranking order preserved, including the detail that `muy importante` is tested before `no importante`. The tie-break chain is unchanged: completion, urgency, importance, due date with unreadable dates last, then name case-insensitively.
+
+### Honest limit
+
+This is a structural extraction; it deliberately changes no behaviour. Two tests describe the ranking as it was, so a later behaviour change has to be deliberate rather than accidental.
 
 ## Known fragilities from reconnaissance
 
