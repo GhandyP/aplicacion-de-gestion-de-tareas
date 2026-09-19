@@ -87,6 +87,7 @@ of fragile persistence.
 | Docs `4f250ac` (tree `48dfe85c`) | `review-460f776439bc33c5` | high | risk, resilience, readability, reliability | approved, authority burned; all four reviewers admitted cleanly |
 | Docs `544bb9b` (tree `a14ef425`) | `review-06e2e0c62457f94d` | high | risk, resilience, readability, reliability | approved, authority burned; consent granted on the first attempt |
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
+| T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -218,8 +219,11 @@ Nine entries, all reducing to the same five known issues already scheduled into 
 | fourth | docs only | one (CRLF accounting) | ~88 KB |
 | fifth | docs only | none | ~90 KB |
 | sixth | T5 code + docs | none, and none on the new code | ~98 KB |
+| seventh | T6 code + docs | none, and none on the new code | ~106 KB |
 
 Repeated review of unchanged code produces no information and keeps costing four model runs; new code does get real coverage when it is reviewed. That is the argument for fewer, larger candidates rather than per-commit ones.
+
+By the seventh review the picture is sharper than "reviews cost a lot". Four consecutive reviews returned no finding on the newest code, and the same five issues keep reappearing because nothing has addressed them yet. The remaining work is concentrated in exactly those five items, which T8 owns. So the useful move is to land T7 together with T8 and review the result once, instead of paying for the accumulated range four more times to rediscover the same list.
 
 ## T6 evidence
 
