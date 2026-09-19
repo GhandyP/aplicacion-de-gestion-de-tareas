@@ -43,7 +43,7 @@ of fragile persistence.
 | T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | done | `5db0cb5` |
 | T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | done | `7501f87` |
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | done | `db361b4` |
-| T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
+| T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | done | `795abaa` |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | pending | - |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
@@ -220,6 +220,23 @@ Nine entries, all reducing to the same five known issues already scheduled into 
 | sixth | T5 code + docs | none, and none on the new code | ~98 KB |
 
 Repeated review of unchanged code produces no information and keeps costing four model runs; new code does get real coverage when it is reviewed. That is the argument for fewer, larger candidates rather than per-commit ones.
+
+## T6 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 22` (was 20), exit 0. Smoke green with no source and after an import.
+- Commit `795abaa`, 94 added lines.
+
+### Scope was exactly one site
+
+A search for discarded failures across `src/taskmanager` found `MainFrame.java:421` as the only silent catch in the whole source. Every other one either calls `showError`, sets the status line, or collects a problem. So this unit did not need a sweep; it needed that one site fixed and the fix to be testable.
+
+### Why not just throw
+
+The original comment had a point: refusing to export because the default folder is missing would be worse than exporting somewhere else. So the fix keeps the export unblocked and returns the reason instead of discarding it, and the caller shows it in the status line and the dialog title. The test pins both halves: a writable application directory reports nothing, and a folder blocked by an ordinary file names the path and still returns it for fallback.
+
+### Skipped review, declared
+
+Candidate `sha256:683fce61…` (documentation commit `3dc9f22`) was not sent to review. Ground: `git diff db361b4..HEAD` is one file, `odd/tasks/task-manager-hardening.md`, plus 36 lines, and the same diff for `src/` and `test/` is empty. Same auditable basis as the previous skip.
 
 ## Known fragilities from reconnaissance
 
