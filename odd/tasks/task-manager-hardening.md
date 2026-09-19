@@ -52,6 +52,7 @@ of fragile persistence.
 T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3. T11 exists for the same reason one round later: the tenth review found four issues, three of them in code written during T9's neighbours.
 
 | T11 | Close the four findings the tenth review surfaced | `R4-replace-failure-memory-drift`, `R4-nonatomic-fallback`, `R3-001`, `R2-unreadable-root-check-order` | done | `f1ae113` |
+| T12 | Close the silent root path the eleventh review exposed | `R1/R3/R4-unreadable-root-silent`, `R4-uninspectable-root-silence`, `R2-001` | done | `68daa53` |
 
 ## Baseline evidence (T1)
 
@@ -380,6 +381,22 @@ The test forces a save failure deterministically by removing write permission fr
 ### The other two
 
 `save()` now documents the guarantee instead of only commenting on it: the rename is atomic where the filesystem supports it, and the fallback is a whole-file replace that is still never a truncating write. Source discovery no longer says a root "is not a directory" when all it knows is that the path could not be inspected.
+
+## T12 evidence, and the stopping rule applied
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 36` (was 35), exit 0. Smoke green in three scenarios, including a source root that does not exist, which must stay silent because that is the normal state before anything is configured.
+- Commit `68daa53`, 37 added lines.
+
+One stat replaced the chain of `Files.exists`, `Files.isDirectory` and `Files.isReadable`. `NoSuchFileException` keeps the silent path; any other `IOException` is reported with its cause; and because the stat succeeded, the "not a directory" message is now something the code can actually know rather than guess.
+
+### The rule, applied for real
+
+The eleventh review left six findings. Four were the root-silence family, all closed here. Two remain:
+
+- `R1-unreadable-export-selected` — discovery may select an export that cannot be read, and the failure then surfaces as a reported error at import. Not silent, no data lost.
+- `R4-nonatomic-replace-risk` — the fallback means the atomicity guarantee is conditional, which the documentation now states precisely. A claim about wording, not about behaviour.
+
+Against the rule recorded after the eleventh review — *stop when every remaining finding concerns how something is reported or worded, and none concerns data that is written, read, or silently lost* — the remaining two pass. **The program closes here on that criterion**, not on a claim that the list is empty.
 
 ## Known fragilities from reconnaissance
 
