@@ -49,7 +49,9 @@ of fragile persistence.
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | done | `a016615` |
 | T10 | Close the two findings the ninth review surfaced | `R3-generated-explicit-id-collision`, `R4-silent-unreadable-root` | done | `265cd2a` |
 
-T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3.
+T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3. T11 exists for the same reason one round later: the tenth review found four issues, three of them in code written during T9's neighbours.
+
+| T11 | Close the four findings the tenth review surfaced | `R4-replace-failure-memory-drift`, `R4-nonatomic-fallback`, `R3-001`, `R2-unreadable-root-check-order` | done | `f1ae113` |
 
 ## Baseline evidence (T1)
 
@@ -338,6 +340,23 @@ Every id now goes through one set of taken ids plus the row that first used it. 
 - Commit `a016615`, README rewritten with 91 added and 12 removed lines. Doc-only, so no review: verified with `git diff --stat` that no file under `src/` or `test/` changed.
 - The README had drifted into being false, which is its own kind of defect: it claimed OpenJDK 25, listed four tests, and described the pre-hardening application. It now documents the single launcher and why `run.sh` was removed (the `R4-removed-launcher` finding that had been carried since T2), the two environment variables and their defaults, atomic saves and the owner-only mode, when backups are taken and how to restore one, the shape of a malformed-CSV message, and how discovery distinguishes a missing root from an unreadable one.
 - Both documented commands were run exactly as written before committing: the environment-variable smoke example and the test runner.
+
+## T11 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 35` (was 34), exit 0. Smoke green in three scenarios.
+- Commit `f1ae113`, 108 added and 30 removed lines.
+
+### The memory drift, fixed beyond what was reported
+
+The review caught the drift in `replaceAll`, where the whole list is discarded. The same window existed in `add`, `update`, `delete`, `markCompleted` and `postponeDueDate`: all of them changed memory and only then wrote the file. Fixing one and leaving five would have been answering the report rather than the defect, so every mutator now builds the list it intends to have, writes it, and adopts it only after the write returned. `markCompleted` and `postponeDueDate` collapsed into delegations to `update`, and the now-unused `updateWithoutSave` is gone.
+
+### What the red test does and does not prove
+
+The test forces a save failure deterministically by removing write permission from the data directory. Worth stating precisely: it fails on the mutators that mutated before writing, and it does **not** reproduce the `replaceAll` drift, because in that path the backup copy fails first and the mutation never happens. The `replaceAll` drift needs a failure after the backup, such as a full disk or a failed rename, which cannot be forced portably. The fix covers both paths by construction, and the test proves the invariant for the paths it can reach.
+
+### The other two
+
+`save()` now documents the guarantee instead of only commenting on it: the rename is atomic where the filesystem supports it, and the fallback is a whole-file replace that is still never a truncating write. Source discovery no longer says a root "is not a directory" when all it knows is that the path could not be inspected.
 
 ## Known fragilities from reconnaissance
 
