@@ -417,6 +417,22 @@ The `ATOMIC_MOVE` fallback: the same finding the stopping rule had already class
 
 The programme closes here. Not because the list is empty, which eleven rounds proved is not an attainable condition, but because the last list passes the criterion set out one review earlier: nothing remaining concerns data that is written, read, or silently lost.
 
+## The tolerated finding, revisited and fixed
+
+After closing the programme I re-read the single remaining finding, `R4-nonatomic-existing-target` (`TaskRepository.java:157-166`), and **my classification had been too generous**.
+
+I had filed it under "about how a guarantee is stated". Re-read properly, the fallback called `Files.move` with `REPLACE_EXISTING` over an existing task list. On a filesystem without atomic rename, that replace may be implemented as a copy followed by a delete, and an interruption during the copy leaves the list half-written. **That is a path where the task list is lost**, which is precisely what the stopping rule says is not tolerable.
+
+The fix: the current file is copied aside before that replace, so the previous tasks stay recoverable. It only runs after the atomic rename has already failed, so a normal save still writes no backup — verified by listing the data directory after an import, which contains only `tasks.csv`.
+
+Commit `18e71a0`. As with the fallback itself, the trigger cannot be forced portably, so this branch ships without a deterministic test; that is stated rather than implied.
+
+### The method lesson, which matters more than the fix
+
+The stopping rule sorts findings into "about data" and "about wording". I sorted this one by **where it was written** — a comment inside a catch block reads like wording — instead of by **what it can do**. Those are different questions, and answering the wrong one is how a data-loss path gets waved through by a rule designed to catch exactly that.
+
+Sorting by consequence rather than by appearance is the correction, and it is the reason this last item was worth reopening.
+
 ## Known fragilities from reconnaissance
 
 1. `MainFrame` is a 437-line god class: window construction, filtering, sorting, persistence actions, dialogs, exports (`MainFrame.java:71-428`).
