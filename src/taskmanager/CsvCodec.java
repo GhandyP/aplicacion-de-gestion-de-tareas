@@ -95,13 +95,18 @@ public final class CsvCodec {
                         column++;
                     }
                 } else {
-                    if (current == '\n') {
+                    field.append(current);
+                    if (current == '\r' && index + 1 < input.length() && input.charAt(index + 1) == '\n') {
+                        field.append('\n');
+                        index++;
+                        line++;
+                        column = 1;
+                    } else if (current == '\n' || current == '\r') {
                         line++;
                         column = 1;
                     } else {
                         column++;
                     }
-                    field.append(current);
                 }
                 continue;
             }

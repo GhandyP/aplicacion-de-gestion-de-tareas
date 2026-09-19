@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +26,14 @@ import java.util.UUID;
 public final class TaskRepository {
     private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final String BACKUP_SUFFIX = ".bak";
+
+    /**
+     * How many known column names make a row a header.
+     *
+     * <p>Three is low enough to survive a renamed first column and high enough that a data row would
+     * have to have several values that happen to equal column names.</p>
+     */
+    private static final int HEADER_MATCH_THRESHOLD = 3;
 
     public static final List<String> LOCAL_HEADERS;
 
@@ -150,7 +159,13 @@ public final class TaskRepository {
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                 CsvCodec.write(writer, rows);
             }
-            Files.move(temporary, localFile, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                Files.move(temporary, localFile, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException error) {
+                // Some filesystems cannot rename atomically. Replacing in place is still a whole-file
+                // replacement of a complete temporary file, which is far better than truncating first.
+                Files.move(temporary, localFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } finally {
             Files.deleteIfExists(temporary);
         }
@@ -167,8 +182,14 @@ public final class TaskRepository {
             return;
         }
         String stamp = LocalDateTime.now().format(BACKUP_STAMP);
-        Path backup = localFile.resolveSibling(localFile.getFileName() + "." + stamp + BACKUP_SUFFIX);
-        Files.copy(localFile, backup, StandardCopyOption.REPLACE_EXISTING);
+        String name = localFile.getFileName() + "." + stamp;
+        Path backup = localFile.resolveSibling(name + BACKUP_SUFFIX);
+        int suffix = 2;
+        while (Files.exists(backup)) {
+            // Two replacements inside one second must both survive.
+            backup = localFile.resolveSibling(name + "-" + suffix++ + BACKUP_SUFFIX);
+        }
+        Files.copy(localFile, backup);
     }
 
     /** Reads a source export and creates deterministic local task ids without changing the source. */
@@ -295,7 +316,22 @@ public final class TaskRepository {
             return false;
         }
         String first = row.get(0) == null ? "" : row.get(0).stripLeading();
-        return first.equalsIgnoreCase("id") || first.equalsIgnoreCase("nombre");
+        if (first.equalsIgnoreCase("id") || first.equalsIgnoreCase("nombre")) {
+            return true;
+        }
+        int matches = 0;
+        for (String cell : row) {
+            if (cell == null) {
+                continue;
+            }
+            String trimmed = cell.trim();
+            for (String header : Task.SOURCE_HEADERS) {
+                if (header.equalsIgnoreCase(trimmed) && ++matches >= HEADER_MATCH_THRESHOLD) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean isBlankRow(List<String> row) {

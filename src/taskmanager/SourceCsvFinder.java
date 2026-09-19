@@ -102,15 +102,6 @@ public final class SourceCsvFinder {
         return new Discovery(selectLargest(candidates), problems);
     }
 
-    /** The default search root: {@code <userHome>/Documents/Obsidian Vault/GDT/01_Tareas}. */
-    public static Path defaultRoot(Path userHome) {
-        return Objects.requireNonNull(userHome, "userHome")
-                .resolve("Documents")
-                .resolve("Obsidian Vault")
-                .resolve("GDT")
-                .resolve("01_Tareas");
-    }
-
     private static boolean isCanonicalName(Path path) {
         Path fileName = path.getFileName();
         return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith("_all.csv");

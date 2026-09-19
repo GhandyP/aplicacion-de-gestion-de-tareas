@@ -71,6 +71,12 @@ public final class TaskManagerTests {
                 TaskManagerTests::testTaskOrderRanksCompletionThenUrgencyThenImportance);
         runTest("task order places unreadable dates last and breaks ties by name",
                 TaskManagerTests::testTaskOrderPlacesUnreadableDatesLastAndBreaksTiesByName);
+        runTest("repeated replacements keep both backups",
+                TaskManagerTests::testRepeatedReplacementsKeepBothBackups);
+        runTest("a renamed source header is still a header",
+                TaskManagerTests::testSourceHeaderIsRecognisedEvenWhenItsFirstNameDiffers);
+        runTest("a CRLF inside a quoted field advances the line",
+                TaskManagerTests::testCrlfInsideAQuotedFieldAdvancesTheLine);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -650,6 +656,67 @@ public final class TaskManagerTests {
         ties.sort(TaskOrder.DEFAULT);
         check(ids(ties).equals(List.of("4", "5")),
                 "equal keys break by name case-insensitively, got " + ids(ties));
+    }
+
+    private static void testRepeatedReplacementsKeepBothBackups() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-backup-collision");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("1", "First local", "Work", "", "No", "", "", ""));
+
+            Path source = dataDirectory.resolve("vault_all.csv");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(Task.SOURCE_HEADERS);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+
+            repository.replaceAll(TaskRepository.importFrom(source));
+            repository.replaceAll(TaskRepository.importFrom(source));
+
+            List<Path> backups = listBackups(dataDirectory);
+            check(backups.size() == 2,
+                    "two replacements inside the same second must keep two backups, because a"
+                            + " seconds-resolution name silently overwrites the earlier one; got " + backups);
+        } finally {
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static void testSourceHeaderIsRecognisedEvenWhenItsFirstNameDiffers() throws IOException {
+        Path source = Files.createTempFile("task-renamed-header", ".csv");
+        try {
+            List<String> renamedHeader = new ArrayList<>(Task.SOURCE_HEADERS);
+            renamedHeader.set(0, "Task");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(renamedHeader);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+
+            List<Task> imported = TaskRepository.importFrom(source);
+            check(imported.size() == 1,
+                    "a header row whose first column was renamed is still a header, and a header row"
+                            + " has exactly fourteen fields so it would import cleanly as a task; got "
+                            + imported.size() + " imported");
+            check(!imported.get(0).values().get(0).equals("Task"),
+                    "the header must not become a task whose first field is its own column name");
+        } finally {
+            Files.deleteIfExists(source);
+        }
+    }
+
+    private static void testCrlfInsideAQuotedFieldAdvancesTheLine() throws IOException {
+        try {
+            CsvCodec.read(new StringReader("\"first\r\nsecond\",ok\r\n\"bad\"x\r\n"));
+            check(false, "text after a closing quote must be rejected");
+        } catch (CsvFormatException expected) {
+            check(expected.line() == 3,
+                    "a CRLF inside a quoted field must advance the line counter, or every later"
+                            + " position is off by one and the diagnostic points at the wrong row; got line "
+                            + expected.line());
+            check(expected.column() == 6,
+                    "the column after the CRLF must still be right, got " + expected.column());
+        }
     }
 
     private static List<String> ids(List<Task> tasks) {
