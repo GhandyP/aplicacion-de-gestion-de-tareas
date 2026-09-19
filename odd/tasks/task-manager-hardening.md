@@ -45,7 +45,7 @@ of fragile persistence.
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | done | `db361b4` |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | done | `795abaa` |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | done (part of the T7+T8 candidate) | `09d44a0` |
-| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | pending | - |
+| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | done | `818f866` + `95181dd` |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
 
 ## Baseline evidence (T1)
@@ -265,6 +265,27 @@ The comparator and its ranking vocabulary were inside the window class: `muy urg
 ### Honest limit
 
 This is a structural extraction; it deliberately changes no behaviour. Two tests describe the ranking as it was, so a later behaviour change has to be deliberate rather than accidental.
+
+## T8 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 32` (was 27 before the unit), exit 0. Smoke green with no source and after an import.
+- Commits `818f866` (the five findings) and `95181dd` (coverage), 173 added lines together.
+
+### The five findings, and what each one actually was
+
+| Finding | What was wrong | Test |
+|---|---|---|
+| Backup timestamp collision | seconds-resolution names meant two replacements in one second overwrote the earlier backup, losing it silently. The red test showed exactly one backup where two were expected. | yes |
+| `ATOMIC_MOVE` portability | the move can throw on a filesystem that cannot rename atomically. Now falls back to a whole-file replace. | **no deterministic test** |
+| Unknown source header | a column-name row was recognised only by its first cell, so a renamed first column turned the header into a task, since a header row has exactly fourteen fields. | yes |
+| Dead `defaultRoot` | no callers left after configuration took ownership of the default location. | n/a (deletion, compile-verified) |
+| CRLF position accounting | a carriage return inside a quoted field advanced the column instead of the line, so a CRLF in a quoted multi-line field left every later position one line off. Field content unchanged. | yes |
+
+**Stated rather than implied:** the `ATOMIC_MOVE` fallback branch cannot be exercised on this machine's filesystem, so it ships without a deterministic test. Its observable contract (a save replaces the file and leaves no temporary behind) stays covered by the atomicity test.
+
+### Coverage added
+
+`MarkdownExporter` and `TaskTableModel` had no tests at all. The two new tests are characterisation tests: they passed on the first run because they describe behaviour that already worked. That is the honest description of them, and it is why they are not presented as red-then-green.
 
 ## Known fragilities from reconnaissance
 
