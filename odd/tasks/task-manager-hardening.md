@@ -45,7 +45,7 @@ of fragile persistence.
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
-| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, and `R3/R4-AtomicMovePortability` | pending | - |
+| T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | pending | - |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
 
 ## Baseline evidence (T1)
@@ -84,6 +84,7 @@ of fragile persistence.
 | T2 + docs (`e6e0567`, `52614d0`, `b1cbd69`) | `review-8e1a13981d69edba` | high | risk, resilience, readability, reliability | approved, authority burned |
 | Review record `3aea4e4` (doc-only increment) | `review-1bdd65b875ce3f69` (no lineage created) | n/a | n/a | **left unreviewed by explicit user decision** |
 | T3 + T4 + docs (through `177676b`, tree `01f83a17`) | `review-b1178646de5500fd` | high | risk, resilience, readability, reliability | approved, authority burned |
+| Docs `4f250ac` (tree `48dfe85c`) | `review-460f776439bc33c5` | high | risk, resilience, readability, reliability | approved, authority burned; all four reviewers admitted cleanly |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -107,9 +108,17 @@ Eight entries, which reduce to four distinct issues. Two are defects in code wri
 
 The four-lens group was submitted once: three reviewers were admitted, and the `review-reliability` reviewer was refused at admission with `binding_mismatch`, because its result echoed a different artifact subject than the binding's `subject_hash`. The refusal did not consume the lens slot and preserved the rejected payload under `.git/gentle-ai/rejected-results/`. Per the refusal, the refused bytes were never resubmitted: a fresh STATUS was taken, it reoffered exactly that one slot, and only that slot was re-run. It was admitted and closed the review as approved.
 
+### Findings from the fourth review (all advisory, none blocking)
+
+Eight entries that reduce to the same four known issues, plus one new one on code written during T3:
+
+- `R2-crlf-position-accounting` (`CsvCodec.java:94-102`, new): inside a quoted field a carriage return advances the column counter instead of the line counter, so a CRLF line break embedded in a quoted field leaves every later reported position off by one line. The positions the codec promises are therefore wrong for CRLF input that contains quoted multi-line fields. Scheduled into T8, and it is a defect in this feature's own diff.
+
+The other seven entries are repetitions of `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, `R3-UnknownSourceHeader`, and `R2-DuplicateDefaultSourceRoot`, all already scheduled into T8.
+
 ## Consent failures: corrected diagnosis
 
-**Correction (2026-09-18, after the T4 candidate was reviewed successfully):** the failures described below were NOT a broken native layer. The decisive evidence is `native_invocation_attempted: false` in the final `consent-binding-stale` response: the native side was never called, so nothing about the review authority store was at fault. The consent binding has a ten-minute life and is created before the model turn that answers it, so a long turn reliably produces `consent-binding-stale`. Issuing START again immediately, in a short turn, succeeds: that is how this candidate obtained its lineage, with no lock cleanup and no configuration change. The stale `REVIEW-MAINTENANCE.lock` and the `cancelled` status call remain unexplained, but they are not the blocker they were assumed to be.
+**Correction (2026-09-18, after the T4 candidate was reviewed successfully):** the failures described below were NOT a broken native layer. The decisive evidence is `native_invocation_attempted: false` in the final `consent-binding-stale` response: the native side was never called, so nothing about the review authority store was at fault. The consent binding has a ten-minute life and the facade reports it expired before the START call can answer it. This candidate also took three attempts: attempts one and two returned `consent-binding-stale` even though they were issued about thirty seconds apart, and both reported `expired after 10 minutes`, which is impossible for a binding minted moments earlier. That rules out turn duration as the mechanism: the binding the facade reads was minted earlier than the START call. The reliable remedy is a human at the host consent panel, not a faster retry. The third attempt succeeded exactly when the user was watching, with no lock cleanup and no configuration change. The stale `REVIEW-MAINTENANCE.lock` and the `cancelled` status call remain unexplained, but they are not the blocker they were assumed to be.
 
 ### Superseded diagnosis (kept for the record)
 
