@@ -82,7 +82,7 @@ public final class TaskRepository {
         }
         List<Task> updated = new ArrayList<>(tasks);
         updated.add(task);
-        persist(updated);
+        persist(updated, false);
     }
 
     public synchronized void update(Task replacement) throws IOException {
@@ -91,7 +91,7 @@ public final class TaskRepository {
         for (int index = 0; index < updated.size(); index++) {
             if (updated.get(index).id().equals(replacement.id())) {
                 updated.set(index, replacement);
-                persist(updated);
+                persist(updated, false);
                 return;
             }
         }
@@ -103,7 +103,7 @@ public final class TaskRepository {
         if (!updated.removeIf(task -> task.id().equals(id))) {
             return false;
         }
-        persist(updated);
+        persist(updated, false);
         return true;
     }
 
@@ -135,7 +135,7 @@ public final class TaskRepository {
         backupExistingLocalFile();
         // Writing first and adopting the list afterwards is what keeps a failed replacement from
         // leaving the window showing tasks that were never persisted.
-        persist(normalized);
+        persist(normalized, true);
     }
 
     /**
@@ -148,7 +148,7 @@ public final class TaskRepository {
      * interruption would leave half-written.</p>
      */
     public synchronized void save() throws IOException {
-        writeTasks(tasks);
+        writeTasks(tasks, false);
     }
 
     /**
@@ -157,17 +157,18 @@ public final class TaskRepository {
      * <p>Every mutator goes through here. Changing memory before the write would let a failed save
      * leave the visible list describing work that does not exist on disk.</p>
      */
-    private void persist(List<Task> toWrite) throws IOException {
-        writeTasks(toWrite);
+    private void persist(List<Task> toWrite, boolean backedUpAlready) throws IOException {
+        writeTasks(toWrite, backedUpAlready);
         tasks.clear();
         tasks.addAll(toWrite);
     }
 
-    private void writeTasks(List<Task> toWrite) throws IOException {
-        Path parent = localFile.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
+    private void writeTasks(List<Task> toWrite, boolean backedUpAlready) throws IOException {
+        // The constructor normalizes the local file to an absolute path, so it always has a parent.
+        // One check states that invariant for both callers below instead of guarding only one of them.
+        Path parent = Objects.requireNonNull(localFile.getParent(),
+                "the local file must be absolute, which the constructor guarantees");
+        Files.createDirectories(parent);
         List<List<String>> rows = new ArrayList<>();
         rows.add(LOCAL_HEADERS);
         for (Task task : toWrite) {
@@ -190,8 +191,11 @@ public final class TaskRepository {
                 // This filesystem cannot rename atomically, so the replace below may be implemented as
                 // a copy followed by a delete, and an interruption during that copy would leave the
                 // task list half-written. The current file is therefore copied aside first, so the
-                // previous tasks stay recoverable from a backup.
-                backupExistingLocalFile();
+                // previous tasks stay recoverable from a backup. A caller that already copied it
+                // aside says so, so one replacement never leaves two identical backups.
+                if (!backedUpAlready) {
+                    backupExistingLocalFile();
+                }
                 Files.move(temporary, localFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
