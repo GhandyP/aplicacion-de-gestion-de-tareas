@@ -47,6 +47,9 @@ of fragile persistence.
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | done (part of the T7+T8 candidate) | `09d44a0` |
 | T8 | Close remaining test gaps: Markdown export, `TaskTableModel`, `AppStartup` branches | coverage gaps, plus the advisory findings `R2-DuplicateDefaultSourceRoot`, `R3-unknown-header`, `R1/R4-BackupTimestampCollision`, `R3/R4-AtomicMovePortability`, and `R2-crlf-position-accounting` | done | `818f866` + `95181dd` |
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | pending | - |
+| T10 | Close the two findings the ninth review surfaced | `R3-generated-explicit-id-collision`, `R4-silent-unreadable-root` | done | `265cd2a` |
+
+T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3.
 
 ## Baseline evidence (T1)
 
@@ -299,6 +302,21 @@ The ninth review replaced the recycled list with two findings that are specific 
 2. `R4-silent-unreadable-root` (`SourceCsvFinder.java:64-66`) — `discover` returns "nothing found" both for a root that is genuinely absent and for a root that exists but cannot be read, so an unreadable vault is reported as an empty vault. The same class of silent failure T2 went after, one level up.
 
 Both are code changes, so they get a small unit (T10) rather than being folded into the documentation unit. `R4-removed-launcher` remains a documentation item in T9.
+
+## T10 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 34` (was 32), exit 0. Smoke green in three scenarios.
+- Commit `265cd2a`, 80 added lines.
+
+### Duplicate ids, the defect this feature introduced
+
+Duplicate detection had grown two structures: a map for explicit ids and a set for generated ones. An id that a **generated** row had already taken was therefore invisible to the explicit check, so two tasks could share an id and every lookup by id could return the wrong task. The red test proved it by loading a file that did exactly that and watching the repository accept it.
+
+Every id now goes through one set of taken ids plus the row that first used it. A collision between two *generated* ids is still renamed rather than fatal, because two identical legacy rows are legitimate; only an explicit duplicate is an error. Both halves are tested.
+
+### The unreadable root
+
+`discover` answered "nothing found" for three different situations: no root configured, a root that is not a directory, and a root that exists but cannot be read. Only the first is a normal state that deserves silence. The three are now distinct outcomes, and the message says which one happened. Note that `Files.isDirectory` reports false on a permission error, so a separate readability check is needed after it to produce the right message.
 
 ## Known fragilities from reconnaissance
 
