@@ -22,16 +22,12 @@ import java.awt.GridLayout;
 import java.awt.Window;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -57,7 +53,7 @@ public final class MainFrame extends JFrame {
         super("Task Manager");
         this.prepared = prepared;
         this.repository = prepared.repository();
-        this.appDirectory = prepared.localFile().toAbsolutePath().getParent().getParent();
+        this.appDirectory = prepared.appDirectory();
         buildUi();
         rebuildFacetFilters();
         setStatus(prepared.status());
@@ -156,7 +152,7 @@ public final class MainFrame extends JFrame {
     private void rebuildFacetFilters() {
         replaceOptions(importanceFilter, valuesOf(repository.tasks(), Task::importance));
         replaceOptions(urgencyFilter, valuesOf(repository.tasks(), Task::urgency));
-        replaceOptions(areaFilter, areaValues(repository.tasks()));
+        replaceOptions(areaFilter, AreaTokens.across(repository.tasks()));
     }
 
     private void replaceOptions(JComboBox<String> combo, Collection<String> values) {
@@ -180,18 +176,6 @@ public final class MainFrame extends JFrame {
         return values;
     }
 
-    private Set<String> areaValues(Collection<Task> tasks) {
-        Set<String> values = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (Task task : tasks) {
-            for (String token : task.areas().split("[,;|\\n]")) {
-                if (!token.isBlank()) {
-                    values.add(token.trim());
-                }
-            }
-        }
-        return values;
-    }
-
     private void refreshTable() {
         TaskFilter.Criteria criteria = new TaskFilter.Criteria(
                 searchField.getText(),
@@ -200,7 +184,7 @@ public final class MainFrame extends JFrame {
                 selectedFacet(urgencyFilter),
                 selectedFacet(areaFilter));
         List<Task> visible = TaskFilter.apply(repository.tasks(), criteria);
-        visible.sort(taskComparator());
+        visible.sort(TaskOrder.DEFAULT);
         tableModel.setTasks(visible);
         long active = repository.tasks().stream().filter(task -> !task.isCompleted()).count();
         long completed = repository.tasks().size() - active;
@@ -219,42 +203,6 @@ public final class MainFrame extends JFrame {
     private String selectedFacet(JComboBox<String> combo) {
         String value = String.valueOf(combo.getSelectedItem());
         return ALL.equals(value) ? "" : value;
-    }
-
-    private Comparator<Task> taskComparator() {
-        return Comparator.comparing(Task::isCompleted)
-                .thenComparingInt(task -> urgencyRank(task.urgency()))
-                .thenComparingInt(task -> importanceRank(task.importance()))
-                .thenComparing(task -> TaskDates.parse(task.dueDate()).orElse(LocalDate.MAX))
-                .thenComparing(Task::name, String.CASE_INSENSITIVE_ORDER);
-    }
-
-    private int urgencyRank(String value) {
-        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
-        if (normalized.contains("muy urgente")) {
-            return 0;
-        }
-        if (normalized.contains("media")) {
-            return 1;
-        }
-        if (normalized.contains("poca")) {
-            return 2;
-        }
-        return 3;
-    }
-
-    private int importanceRank(String value) {
-        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
-        if (normalized.contains("muy importante")) {
-            return 0;
-        }
-        if (normalized.equals("importante")) {
-            return 1;
-        }
-        if (normalized.contains("no importante")) {
-            return 2;
-        }
-        return 3;
     }
 
     private Task selectedTask() {
@@ -359,15 +307,20 @@ public final class MainFrame extends JFrame {
 
     private void importFromObsidian() {
         try {
-            Optional<Path> source = SourceCsvFinder.findLargest(prepared.sourceRoot());
+            SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(prepared.sourceRoot());
+            Optional<Path> source = discovery.selected();
+            String problems = discovery.hasProblems()
+                    ? "\n\nSome folders could not be read and were skipped:\n"
+                            + String.join("\n", discovery.problems())
+                    : "";
             if (source.isEmpty()) {
-                showInfo("No *_all.csv export was found under:\n" + prepared.sourceRoot());
+                showInfo("No *_all.csv export was found under:\n" + prepared.sourceRoot() + problems);
                 return;
             }
             List<Task> imported = TaskRepository.importFrom(source.get());
             int choice = JOptionPane.showConfirmDialog(this,
                     "Replace the local task list with " + imported.size() + " tasks from:\n"
-                            + source.get() + "?\n\nLocal edits not exported will be lost.",
+                            + source.get() + "?\n\nLocal edits not exported will be lost." + problems,
                     "Refresh from Obsidian", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (choice != JOptionPane.YES_OPTION) {
                 return;
@@ -410,13 +363,13 @@ public final class MainFrame extends JFrame {
     }
 
     private JFileChooser exportChooser(String defaultName) {
-        Path exportDirectory = appDirectory.resolve("exports");
-        try {
-            Files.createDirectories(exportDirectory);
-        } catch (IOException ignored) {
-            // JFileChooser can still select another directory.
-        }
+        Exports.Prepared prepared = Exports.prepareDefaultDirectory(appDirectory);
+        prepared.problem().ifPresent(this::setStatus);
+        Path exportDirectory = prepared.directory();
         JFileChooser chooser = new JFileChooser(exportDirectory.toFile());
+        chooser.setDialogTitle(prepared.hasProblem()
+                ? "Choose where to export (the default folder is unavailable)"
+                : "Choose where to export");
         chooser.setSelectedFile(new File(exportDirectory.toFile(), defaultName));
         return chooser;
     }

@@ -59,17 +59,31 @@ final class TaskDates {
         if (source.matches("\\d{1,2}/\\d{1,2}/\\d{4}")) {
             return date.format(SLASH_DATE);
         }
-        if (source.matches("(?i).*[a-z].*")) {
-            return date.format(LONG_DATE);
-        }
+        // Everything else, including a blank original, is published in the long readable form.
         return date.format(LONG_DATE);
     }
 
+    /**
+     * Shifts a due date, keeping the style of the original.
+     *
+     * <p>A blank original means "no due date yet", so shifting starts from today. A non-blank
+     * original that is not a recognizable date is an error: falling back to today would publish a
+     * plausible-looking date that has nothing to do with the task.</p>
+     *
+     * @throws IllegalArgumentException if the shift is negative or the original is unparseable
+     */
     static String postpone(String current, int days, Clock clock) {
         if (days < 0) {
-            throw new IllegalArgumentException("Postponement days must not be negative");
+            throw new IllegalArgumentException("Postponement days must not be negative, got " + days);
         }
-        LocalDate base = parse(current).orElseGet(() -> LocalDate.now(clock));
+        String source = current == null ? "" : current.trim();
+        LocalDate base;
+        if (source.isEmpty()) {
+            base = LocalDate.now(clock);
+        } else {
+            base = parse(source).orElseThrow(() -> new IllegalArgumentException(
+                    "Cannot postpone a task whose due date is not a recognizable date: '" + source + "'"));
+        }
         return format(base.plusDays(days), current);
     }
 }

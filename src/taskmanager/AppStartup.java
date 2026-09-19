@@ -11,33 +11,44 @@ public final class AppStartup {
     private AppStartup() {
     }
 
-    public record Prepared(TaskRepository repository, Path localFile, Path sourceRoot,
+    public record Prepared(Path appDirectory, TaskRepository repository, Path localFile, Path sourceRoot,
                            Optional<Path> importedSource, String status) {
     }
 
-    public static Prepared prepare(Path appDirectory) throws IOException {
-        Path applicationDirectory = appDirectory.toAbsolutePath().normalize();
-        Path localFile = applicationDirectory.resolve("data").resolve("tasks.csv");
-        Path sourceRoot = SourceCsvFinder.defaultRoot();
+    /**
+     * Prepares the repository for one launch.
+     *
+     * <p>A first run without a discoverable export leaves no local file behind on purpose: creating an
+     * empty one would make every later launch believe the local copy is authoritative and silently
+     * disable auto-import.</p>
+     */
+    public static Prepared prepare(AppConfig config) throws IOException {
+        Path appDirectory = config.appDirectory();
+        Path localFile = config.localFile();
+        Path sourceRoot = config.sourceRoot();
         boolean firstRun = !Files.exists(localFile);
         TaskRepository repository = new TaskRepository(localFile);
 
         if (!firstRun) {
-            return new Prepared(repository, localFile, sourceRoot, Optional.empty(),
+            return new Prepared(appDirectory, repository, localFile, sourceRoot, Optional.empty(),
                     "Loaded " + repository.size() + " local tasks from " + localFile);
         }
 
-        Optional<Path> source = SourceCsvFinder.findLargest(sourceRoot);
+        SourceCsvFinder.Discovery discovery = SourceCsvFinder.discover(sourceRoot);
+        Optional<Path> source = discovery.selected();
+        String problems = discovery.hasProblems()
+                ? " Unreadable entries were skipped: " + String.join(" ", discovery.problems())
+                : "";
         if (source.isPresent()) {
             List<Task> imported = TaskRepository.importFrom(source.get());
             repository.replaceAll(imported);
-            return new Prepared(repository, localFile, sourceRoot, source,
-                    "Imported " + imported.size() + " tasks from " + source.get());
+            return new Prepared(appDirectory, repository, localFile, sourceRoot, source,
+                    "Imported " + imported.size() + " tasks from " + source.get() + "." + problems);
         }
 
-        repository.save();
-        return new Prepared(repository, localFile, sourceRoot, Optional.empty(),
+        return new Prepared(appDirectory, repository, localFile, sourceRoot, Optional.empty(),
                 "No *_all.csv export found under " + sourceRoot
-                        + ". Use Refresh / Import after placing an export there.");
+                        + ". No local file was created: the next launch imports automatically once an"
+                        + " export appears there. Use Refresh / Import to import one now." + problems);
     }
 }
