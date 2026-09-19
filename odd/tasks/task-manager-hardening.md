@@ -41,7 +41,7 @@ of fragile persistence.
 | T1 | Provision JDK 21 and capture a green baseline with `bash run-tests.sh` | environment blocker | done | see Baseline evidence |
 | T2 | Configurable paths, hardened source discovery, consolidated run scripts | #6 hardcoded paths, #3 unchecked `IllegalStateException`, #8 duplicate scripts, `SmokeTest` in `src/` | done | `52614d0` |
 | T3 | Strict `CsvCodec` with row diagnostics, 14-field and duplicate-ID validation | #7 liberal parser, missing validation, untested error paths | done | `5db0cb5` |
-| T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | pending | - |
+| T4 | Atomic writes and timestamped backups in save/import; drop dead ordinal counters | data-loss risk, #4 unused ordinals | done | `7501f87` |
 | T5 | Validated dates in `TaskDates` (explicit failure instead of silent style drift) | invalid-date handling, untested date edges | pending | - |
 | T6 | Visible failures: surface export/IO errors instead of swallowing them | #5 silent export failures | pending | - |
 | T7 | Extract area parsing and sorting/ranking out of `MainFrame` into domain classes | #1 god class, #2 duplicated responsibility | pending | - |
@@ -130,6 +130,29 @@ Evidence found while diagnosing (circumstantial, causality not proven):
 ### New finding, scheduled into T8
 
 Header detection is name-based only: `TaskRepository.isHeader` matches a first cell of `id` or `nombre`. A source export whose header row starts with any other name is therefore not a header at all, and because a header row has exactly fourteen fields it passes the new field-count check and is imported as a task. The fix is to recognise any of the fourteen known header names, not just the first, and to cover it with a test.
+
+## T4 evidence
+
+- `bash run-tests.sh` -> `ALL_TESTS_PASSED 17` (was 14), exit 0.
+- The atomicity test is real: it compares `BasicFileAttributes.fileKey()` across two saves, so it fails against the old in-place truncating write and passes only when the file is genuinely replaced.
+- Four smoke scenarios with temporary directories: no source -> no file; import -> local file created with no backup, because there was nothing to back up; reload of the app-written file; and no `.tmp` residue left behind.
+- Commits `7501f87` (code) and the documentation commit that follows.
+
+### Visible side effect worth knowing
+
+The renamed file inherits the temporary file's mode, so the local task file is now `-rw-------` (0600) instead of `-rw-rw-r--`. For private task data this is an improvement rather than a regression, but it is a real change to what is on disk and is recorded so nobody is surprised by it.
+
+### Backup policy, decided here
+
+Only `replaceAll` backs up (that is the `Refresh / Import` path, the one operation that discards local edits). Backing up on every `save()` was rejected: `save()` runs on every add, edit, completion, and delete, so it would drop a backup beside every single interaction and turn the data directory into noise. Retention is therefore unbounded but rare-by-construction; T9 documents the recovery procedure.
+
+## Review gate: third candidate also unreviewed
+
+| Candidate | Result |
+|---|---|
+| T3 (`5db0cb5`, `b13a147`) | `native-operation-failed`, `lineage_created: false`, `mutation_performed: false`, `next_action: resolve-native-operation-failure` |
+
+The provider itself asks for a native operation failure to be resolved. That is not something a caller can supply: there are no exact native values to provide, and inventing a lineage, actor, or reason for `review reclaim` is explicitly out of bounds. So the candidate stayed unreviewed, and the user was told the gate was broken rather than that the candidate was judged unnecessary. Three candidates have now failed in three different ways (`consent-binding-stale`, `native-status-unavailable`, `native-operation-failed`), all with `lineage_created: false` and no mutation.
 
 ## Known fragilities from reconnaissance
 
