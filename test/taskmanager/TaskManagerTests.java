@@ -6,6 +6,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
@@ -47,6 +48,12 @@ public final class TaskManagerTests {
         runTest("local file rejects duplicate ids", TaskManagerTests::testLocalFileRejectsDuplicateIds);
         runTest("local file rejects the wrong field count",
                 TaskManagerTests::testLocalFileRejectsWrongFieldCount);
+        runTest("saving replaces the file instead of truncating it",
+                TaskManagerTests::testSaveReplacesTheFileInsteadOfTruncatingIt);
+        runTest("import backs up the previous local file",
+                TaskManagerTests::testImportBacksUpThePreviousLocalFile);
+        runTest("import without previous data creates no backup",
+                TaskManagerTests::testImportWithoutPreviousDataCreatesNoBackup);
         System.out.println("ALL_TESTS_PASSED " + testsRun);
     }
 
@@ -395,6 +402,94 @@ public final class TaskManagerTests {
             }
         } finally {
             Files.deleteIfExists(localFile);
+        }
+    }
+
+    private static void testSaveReplacesTheFileInsteadOfTruncatingIt() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-atomic-test");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("1", "First", "Work", "", "No", "", "", ""));
+            Object firstKey = Files.readAttributes(localFile, BasicFileAttributes.class).fileKey();
+
+            repository.add(task("2", "Second", "Work", "", "No", "", "", ""));
+
+            String after = Files.readString(localFile, StandardCharsets.UTF_8);
+            Object secondKey = Files.readAttributes(localFile, BasicFileAttributes.class).fileKey();
+            check(after.contains("First") && after.contains("Second"), "the second save keeps both tasks");
+            check(firstKey != null && secondKey != null && !firstKey.equals(secondKey),
+                    "saving must replace the file instead of truncating it in place, because a crash"
+                            + " during a truncating write leaves an empty or half-written task list");
+            check(listTempFiles(dataDirectory).isEmpty(),
+                    "a routine save leaves no temporary file behind, got " + listTempFiles(dataDirectory));
+            check(listBackups(dataDirectory).isEmpty(),
+                    "a routine save does not spam backups, got " + listBackups(dataDirectory));
+        } finally {
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static void testImportBacksUpThePreviousLocalFile() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-backup-test");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            repository.add(task("1", "Survives the import", "Work", "", "No", "", "", ""));
+
+            Path source = dataDirectory.resolve("vault_all.csv");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(Task.SOURCE_HEADERS);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+
+            repository.replaceAll(TaskRepository.importFrom(source));
+
+            List<Path> backups = listBackups(dataDirectory);
+            check(backups.size() == 1, "replacing the local list creates exactly one backup, got " + backups);
+            String backupName = backups.get(0).getFileName().toString();
+            check(backupName.matches("tasks\\.csv\\.\\d{8}-\\d{6}\\.bak"),
+                    "the backup is named after the replacement timestamp, got " + backupName);
+            check(Files.readString(backups.get(0), StandardCharsets.UTF_8).contains("Survives the import"),
+                    "the backup holds the previous local content");
+            check(!Files.readString(localFile, StandardCharsets.UTF_8).contains("Survives the import"),
+                    "the local file now holds the imported content");
+        } finally {
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static void testImportWithoutPreviousDataCreatesNoBackup() throws IOException {
+        Path dataDirectory = Files.createTempDirectory("task-nobackup-test");
+        try {
+            Path localFile = dataDirectory.resolve("tasks.csv");
+            TaskRepository repository = new TaskRepository(localFile);
+            Path source = dataDirectory.resolve("vault_all.csv");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(Task.SOURCE_HEADERS);
+            rows.add(fieldRow(Task.FIELD_COUNT));
+            writeRows(source, rows);
+
+            repository.replaceAll(TaskRepository.importFrom(source));
+
+            check(listBackups(dataDirectory).isEmpty(),
+                    "a first import has no previous local file to back up, got " + listBackups(dataDirectory));
+        } finally {
+            deleteTree(dataDirectory);
+        }
+    }
+
+    private static List<Path> listBackups(Path directory) throws IOException {
+        return listBySuffix(directory, ".bak");
+    }
+
+    private static List<Path> listTempFiles(Path directory) throws IOException {
+        return listBySuffix(directory, ".tmp");
+    }
+
+    private static List<Path> listBySuffix(Path directory, String suffix) throws IOException {
+        try (var paths = Files.list(directory)) {
+            return paths.filter(path -> path.getFileName().toString().endsWith(suffix)).sorted().toList();
         }
     }
 

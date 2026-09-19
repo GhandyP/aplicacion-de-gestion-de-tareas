@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -20,6 +23,9 @@ import java.util.UUID;
 
 /** Local CSV persistence boundary. Obsidian files are read-only import sources. */
 public final class TaskRepository {
+    private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final String BACKUP_SUFFIX = ".bak";
+
     public static final List<String> LOCAL_HEADERS;
 
     static {
@@ -106,7 +112,6 @@ public final class TaskRepository {
         Objects.requireNonNull(replacements, "replacements");
         List<Task> normalized = new ArrayList<>();
         Set<String> ids = new HashSet<>();
-        int ordinal = 1;
         for (Task candidate : replacements) {
             if (candidate == null) {
                 continue;
@@ -117,8 +122,8 @@ public final class TaskRepository {
                 candidate = new Task(id, candidate.values());
             }
             normalized.add(candidate);
-            ordinal++;
         }
+        backupExistingLocalFile();
         tasks.clear();
         tasks.addAll(normalized);
         save();
@@ -137,11 +142,33 @@ public final class TaskRepository {
             row.addAll(task.values());
             rows.add(row);
         }
-        try (var writer = Files.newBufferedWriter(localFile, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE)) {
-            CsvCodec.write(writer, rows);
+        // Write beside the target and rename over it: an interrupted save can then never leave a
+        // truncated or half-written task list behind.
+        Path temporary = Files.createTempFile(parent, localFile.getFileName().toString(), ".tmp");
+        try {
+            try (var writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                CsvCodec.write(writer, rows);
+            }
+            Files.move(temporary, localFile, StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(temporary);
         }
+    }
+
+    /**
+     * Copies the current local file aside before an operation replaces it wholesale.
+     *
+     * <p>Only replacing operations back up; a routine edit would otherwise leave a backup beside
+     * every single save.</p>
+     */
+    private void backupExistingLocalFile() throws IOException {
+        if (!Files.isRegularFile(localFile) || Files.size(localFile) == 0) {
+            return;
+        }
+        String stamp = LocalDateTime.now().format(BACKUP_STAMP);
+        Path backup = localFile.resolveSibling(localFile.getFileName() + "." + stamp + BACKUP_SUFFIX);
+        Files.copy(localFile, backup, StandardCopyOption.REPLACE_EXISTING);
     }
 
     /** Reads a source export and creates deterministic local task ids without changing the source. */
@@ -151,7 +178,6 @@ public final class TaskRepository {
         List<Task> imported = new ArrayList<>();
         Set<String> ids = new HashSet<>();
         Map<String, Integer> occurrences = new HashMap<>();
-        int ordinal = 1;
         int rowIndex = 0;
         for (List<String> row : rows) {
             rowIndex++;
@@ -170,7 +196,6 @@ public final class TaskRepository {
                 id = uniqueId(id, ids);
             }
             imported.add(new Task(id, values));
-            ordinal++;
         }
         return imported;
     }
