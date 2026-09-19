@@ -464,6 +464,18 @@ The remaining category is the non-atomic replace on filesystems that cannot rena
 
 The programme therefore stays closed. Any further findings on this rango are recorded as known and accepted, and the honest next input is a human reviewer reading the branch, not another automated round.
 
+## The fifteenth review, and a transcription error worth recording
+
+**Two findings, and both are the same one**: `R3-atomic-move-existing-target` and `R4-atomic-existing-target`, both at `TaskRepository.java:157-166`, the non-atomic replace seen by two lenses. Nothing else. Both fixes from the previous round are gone from the list, which confirms they worked.
+
+### My error, not the tool's
+
+The first capture attempt was rejected: `collectBindings are unknown, expired, or belong to different session routes`. The cause was mine — in the fourth binding I submitted a mangled `values` array instead of the exact one STATUS had issued. **The validator caught it and consumed nothing.** A fresh STATUS reoffered the same four slots, and resubmitting the same bindings correctly worked. Worth recording because the tool's rejection was the correct behaviour, and the mistake was in the transcription rather than in the contract.
+
+### The terminal state
+
+This is as clean as a review loop ends: the only findings left are the one category that cannot be removed by changing code, seen twice by two lenses. Every other finding across fifteen reviews has been closed.
+
 ## Known fragilities from reconnaissance
 
 1. `MainFrame` is a 437-line god class: window construction, filtering, sorting, persistence actions, dialogs, exports (`MainFrame.java:71-428`).
