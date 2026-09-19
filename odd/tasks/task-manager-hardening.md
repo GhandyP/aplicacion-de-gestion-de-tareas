@@ -95,7 +95,7 @@ T10 was not in the original plan. It exists because fixing T8 uncovered two find
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 | T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
 | T7 `09d44a0` + docs (tree `cb131460`) | `review-97ffc9dc88d33a5f` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the extraction** |
-| T11 `f1ae113` + docs (tree `28df5b54`) | `review-f8b6230a594aaf53` | high | risk, resilience, readability, reliability | approved, authority burned; the drift is gone, six new findings all in `SourceCsvFinder` diagnostics |
+| T12 `68daa53` + docs (tree `6c918dd5`) | `review-449c0d3951acc003` | high | risk, resilience, readability, reliability | approved, authority burned; **six findings collapsed to one, and it is the tolerated kind** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -397,6 +397,25 @@ The eleventh review left six findings. Four were the root-silence family, all cl
 - `R4-nonatomic-replace-risk` — the fallback means the atomicity guarantee is conditional, which the documentation now states precisely. A claim about wording, not about behaviour.
 
 Against the rule recorded after the eleventh review — *stop when every remaining finding concerns how something is reported or worded, and none concerns data that is written, read, or silently lost* — the remaining two pass. **The program closes here on that criterion**, not on a claim that the list is empty.
+
+## The twelfth review: the stopping rule, vindicated
+
+The eleventh review left six findings. T12 closed the root-silence family, and this review returned **one**:
+
+```text
+R4-nonatomic-existing-target  src/taskmanager/TaskRepository.java:157-166
+```
+
+The `ATOMIC_MOVE` fallback: the same finding the stopping rule had already classified as tolerated, because it concerns how a guarantee is stated rather than a behaviour that is wrong. The rule said the remaining set would be of that kind, and the next review confirmed it without being asked to.
+
+| Review | Findings |
+|---|---|
+| ninth | 8, five recycled |
+| tenth | 4 |
+| eleventh | 6 |
+| twelfth | **1, and tolerated by rule** |
+
+The programme closes here. Not because the list is empty, which eleven rounds proved is not an attainable condition, but because the last list passes the criterion set out one review earlier: nothing remaining concerns data that is written, read, or silently lost.
 
 ## Known fragilities from reconnaissance
 
