@@ -89,6 +89,7 @@ of fragile persistence.
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 | T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
 | T7 `09d44a0` + docs (tree `cb131460`) | `review-97ffc9dc88d33a5f` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the extraction** |
+| T8 `818f866` + `95181dd` + docs (tree `aa52e4f1`) | `review-fe70daf3611f5f9a` | high | risk, resilience, readability, reliability | approved, authority burned; **the finding list finally changed** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -222,6 +223,9 @@ Nine entries, all reducing to the same five known issues already scheduled into 
 | sixth | T5 code + docs | none, and none on the new code | ~98 KB |
 | seventh | T6 code + docs | none, and none on the new code | ~106 KB |
 | eighth | T7 extraction + docs | none, and none on the new code | ~123 KB |
+| ninth | T8 five fixes + coverage | **two new, and the five recycled ones are gone** | ~135 KB |
+
+The ninth review is the proof the unit was worth doing: eight entries collapsed to three, the five issues that had been recycled for six rounds no longer appear, and the two that replaced them are specific and new. The prediction made before the review ("the list should change because those five no longer exist") held.
 
 Repeated review of unchanged code produces no information and keeps costing four model runs; new code does get real coverage when it is reviewed. That is the argument for fewer, larger candidates rather than per-commit ones.
 
@@ -286,6 +290,15 @@ This is a structural extraction; it deliberately changes no behaviour. Two tests
 ### Coverage added
 
 `MarkdownExporter` and `TaskTableModel` had no tests at all. The two new tests are characterisation tests: they passed on the first run because they describe behaviour that already worked. That is the honest description of them, and it is why they are not presented as red-then-green.
+
+## Two new findings, and where they go
+
+The ninth review replaced the recycled list with two findings that are specific enough to act on:
+
+1. `R3-generated-explicit-id-collision` (`TaskRepository.java:280`) — **introduced by T3**. Duplicate detection uses one set for explicit ids and another for generated ones, so a generated id equal to an explicit id is not caught and two tasks can share an id. That is a real defect in this feature's own diff, found only after the five loud issues stopped drowning the review.
+2. `R4-silent-unreadable-root` (`SourceCsvFinder.java:64-66`) — `discover` returns "nothing found" both for a root that is genuinely absent and for a root that exists but cannot be read, so an unreadable vault is reported as an empty vault. The same class of silent failure T2 went after, one level up.
+
+Both are code changes, so they get a small unit (T10) rather than being folded into the documentation unit. `R4-removed-launcher` remains a documentation item in T9.
 
 ## Known fragilities from reconnaissance
 
