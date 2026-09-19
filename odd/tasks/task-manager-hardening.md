@@ -88,6 +88,7 @@ of fragile persistence.
 | Docs `544bb9b` (tree `a14ef425`) | `review-06e2e0c62457f94d` | high | risk, resilience, readability, reliability | approved, authority burned; consent granted on the first attempt |
 | T5 `db361b4` + docs (tree `45827613`) | `review-910ae6667ad23b3b` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the TaskDates change** |
 | T6 `795abaa` + docs (tree `ab641184`) | `review-d8f187a2bb36a1ac` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the Exports change** |
+| T7 `09d44a0` + docs (tree `cb131460`) | `review-97ffc9dc88d33a5f` | high | risk, resilience, readability, reliability | approved, authority burned; **no finding on the extraction** |
 
 Consent for the T2 candidate needed two extra START attempts: the first two returned `consent-binding-stale` with `lineage_created: false`, and the third succeeded once the human answered the host prompt. Restarting START twice with different bindings is the point at which retrying stops being useful; the human had to resolve it.
 
@@ -220,10 +221,13 @@ Nine entries, all reducing to the same five known issues already scheduled into 
 | fifth | docs only | none | ~90 KB |
 | sixth | T5 code + docs | none, and none on the new code | ~98 KB |
 | seventh | T6 code + docs | none, and none on the new code | ~106 KB |
+| eighth | T7 extraction + docs | none, and none on the new code | ~123 KB |
 
 Repeated review of unchanged code produces no information and keeps costing four model runs; new code does get real coverage when it is reviewed. That is the argument for fewer, larger candidates rather than per-commit ones.
 
 By the seventh review the picture is sharper than "reviews cost a lot". Four consecutive reviews returned no finding on the newest code, and the same five issues keep reappearing because nothing has addressed them yet. The remaining work is concentrated in exactly those five items, which T8 owns. So the useful move is to land T7 together with T8 and review the result once, instead of paying for the accumulated range four more times to rediscover the same list.
+
+The eighth review confirmed it once more and raised the price: five consecutive reviews with no finding on the newest code, the same five issues, and a prompt that reached 123 KB. Every one of those five issues is a line in T8.
 
 ## T6 evidence
 
