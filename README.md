@@ -1,5 +1,7 @@
 # Task Manager
 
+[![Tests](https://github.com/GhandyP/aplicacion-de-gestion-de-tareas/actions/workflows/tests.yml/badge.svg)](https://github.com/GhandyP/aplicacion-de-gestion-de-tareas/actions/workflows/tests.yml)
+
 A small Java Swing desktop application for managing the task inventory exported from Obsidian.
 
 ## Requirements
@@ -7,7 +9,7 @@ A small Java Swing desktop application for managing the task inventory exported 
 - OpenJDK 17 or newer
 - Linux, macOS, or Windows with a graphical desktop for the Swing UI
 
-Verified with OpenJDK 21.0.12.1 (`openjdk-21-jdk-headless` on Debian).
+The suite runs on OpenJDK 17 and 21 in CI, so the minimum above is checked rather than assumed. This environment was verified with OpenJDK 21.0.12.1 (`openjdk-21-jdk-headless` on Debian).
 
 ## Run the application
 
