@@ -1,0 +1,66 @@
+name: Tests
+
+# The suite is dependency-free: plain javac plus assertions under -ea, so the only setup this job
+# needs is a JDK. The matrix exists to check the claim the README makes, that OpenJDK 17 or newer
+# runs the application; only 21 had ever been exercised by hand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    name: suite on JDK ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Show the toolchain under test
+        run: |
+          java -version
+          javac -version
+
+      - name: Run the test suite
+        run: bash run-tests.sh
+
+      - name: Run the headless smoke check on throwaway directories
+        run: |
+          TASKMANAGER_DATA_DIR="$(mktemp -d)" \
+          TASKMANAGER_SOURCE_ROOT="$(mktemp -d)" \
+          bash run-app.sh --smoke-test
+
+      - name: Check the first-run import policy end to end
+        run: |
+          data="$(mktemp -d)"
+          source="$(mktemp -d)"
+          printf '%s\n' \
+            'Nombre,Contexto,Esfuerzo,Fecha,Hecho,Language,Parent item,Parent item 1,Proyecto,Sub-item,Tipo,importancia,urgencia,Areas' \
+            'Imported task,Work,,2026-09-20,No,English,,,Project,,Actionable,High,,Planning' \
+            > "$source/vault_all.csv"
+
+          # A first run with no export must leave no local file behind, or auto-import would be
+          # disabled for every later launch.
+          empty="$(mktemp -d)"
+          TASKMANAGER_DATA_DIR="$data" TASKMANAGER_SOURCE_ROOT="$empty" bash run-app.sh --smoke-test
+          if [ -e "$data/tasks.csv" ]; then
+            echo "::error::a run without a source created $data/tasks.csv"
+            exit 1
+          fi
+
+          # Once an export appears, the next launch must import it without being told to.
+          TASKMANAGER_DATA_DIR="$data" TASKMANAGER_SOURCE_ROOT="$source" bash run-app.sh --smoke-test \
+            | tee /tmp/imported
+          grep -q 'tasks=1' /tmp/imported || {
+            echo "::error::the export was not imported"
+            exit 1
+          }
