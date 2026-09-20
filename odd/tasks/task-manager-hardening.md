@@ -49,6 +49,8 @@ of fragile persistence.
 | T9 | Document operation: env vars, backup/restore, malformed-CSV reporting, scripts | operational clarity, plus advisory `R4-removed-launcher` | done | `a016615` |
 | T10 | Close the two findings the ninth review surfaced | `R3-generated-explicit-id-collision`, `R4-silent-unreadable-root` | done | `265cd2a` |
 
+| T13 | Add CI so the suite runs on every push and pull request, on the oldest supported JDK | the suite only ran when a human remembered | done | `.github/workflows/tests.yml` via PR #10 |
+
 T10 was not in the original plan. It exists because fixing T8 uncovered two findings that the recycled list had been hiding, one of them a defect this feature introduced in T3. T11 exists for the same reason one round later: the tenth review found four issues, three of them in code written during T9's neighbours.
 
 | T11 | Close the four findings the tenth review surfaced | `R4-replace-failure-memory-drift`, `R4-nonatomic-fallback`, `R3-001`, `R2-unreadable-root-check-order` | done | `f1ae113` |
@@ -475,6 +477,13 @@ The first capture attempt was rejected: `collectBindings are unknown, expired, o
 ### The terminal state
 
 This is as clean as a review loop ends: the only findings left are the one category that cannot be removed by changing code, seen twice by two lenses. Every other finding across fifteen reviews has been closed.
+
+## T13 evidence
+
+- PR #10 merged into `main`; the workflow is `.github/workflows/tests.yml`.
+- The run is the evidence: **`suite on JDK 17: success`** and **`suite on JDK 21: success`**, no failed steps.
+- Beyond the suite, the job runs the headless smoke check and asserts the first-run import policy end to end: a launch with no export must leave no local file behind, and the next launch must import the export once it appears.
+- **What this actually proved**: the README claims "OpenJDK 17 or newer" and only 21 had ever been exercised, by hand. The 17 leg is the first time that claim was checked rather than asserted. A CI job whose only purpose is to confirm the code compiles found a documentation claim nobody had tested.
 
 ## Known fragilities from reconnaissance
 
